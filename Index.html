@@ -1,0 +1,867 @@
+<!doctype html>
+<meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Plate v4 - Rugged Offline 3D Modeler</title>
+<style>
+*{box-sizing:border-box}body{margin:0;overflow:hidden;font:13px system-ui,sans-serif;background:#e9edf1;color:#1d2733}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#ov{pointer-events:none}
+#rf{top:128px;left:172px;display:none;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;width:270px}
+#dv{position:fixed;z-index:7;display:none;background:#fff;border:1px solid #1a73e8;border-radius:5px;padding:2px 5px 4px;font-size:11px;color:#455a64;box-shadow:0 1px 5px rgba(0,0,0,.3)}
+#dv input{width:120px;font:bold 13px system-ui;border:1px solid #b5bfca;border-radius:3px;padding:1px 4px}
+#sh button{display:flex;flex-direction:column;align-items:center;gap:1px;padding:3px 2px;font-size:11px}#sh svg{width:32px;height:32px}
+#al{bottom:8px;right:230px;display:none;grid-template-columns:auto 1fr 1fr 1fr;gap:4px;align-items:center}
+.p{position:fixed;background:#fff;border:1px solid #c5cdd6;border-radius:6px;padding:6px}
+#tb{top:8px;left:50%;transform:translateX(-50%);width:max-content;display:flex;align-items:flex-start;row-gap:6px;flex-wrap:wrap;max-width:96vw}
+.tg{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 8px;border-left:1px solid #d3dae2}
+.tg:first-of-type{border-left:0;padding-left:2px}.tg:nth-last-of-type(1){padding-right:2px}
+.tg.rw{flex-direction:row;flex-wrap:wrap;justify-content:center;align-content:flex-start}.tg.v{max-width:140px}.tg.f{max-width:215px}
+#lg{position:fixed;top:8px;right:8px;z-index:5;padding:2px 7px;font-size:11px;font-weight:bold;opacity:.7}#lg:hover{opacity:1}
+#sh{top:128px;left:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px;width:150px}
+#pr{top:128px;right:8px;width:210px;display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center}
+#hint{bottom:8px;left:8px;color:#4a5866;max-width:70vw}
+button{font:inherit;padding:4px 8px;border:1px solid #b5bfca;background:#f6f8fa;border-radius:4px;cursor:pointer}
+button:hover{background:#e3eaf2}
+input[type=number],input[type=text],input:not([type]),select,textarea{width:100%;font:inherit;padding:2px 4px}
+#ar,#sk{top:128px;left:172px;display:none;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;width:280px}
+input[type=checkbox]{justify-self:start}h6{grid-column:1/3;margin:2px 0;font-size:13px}
+#ol{bottom:8px;right:8px;width:210px}#olb{max-height:min(30vh,300px);overflow:auto}
+.p:not(#vc){padding-top:17px}
+.gr{position:absolute;top:0;left:0;right:0;height:11px;cursor:move;background:#e4eaf0;border-radius:6px 6px 0 0;touch-action:none}
+.gr:after{content:'';position:absolute;left:50%;top:4px;width:24px;height:3px;margin-left:-12px;border-top:1px solid #9aa7b4;border-bottom:1px solid #9aa7b4}
+.or{padding:2px 4px;cursor:pointer;display:flex;justify-content:space-between;border-radius:3px}.or:hover{background:#eef3f8}.or.on{background:#cfe3ff}
+#wn{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#fff3cd;border:1px solid #e0a800;border-radius:6px;padding:6px 12px;display:none;z-index:9;pointer-events:none}
+</style>
+<canvas id=c></canvas><canvas id=ov></canvas>
+<div class=p id=tb></div><div class=p id=sh></div><div class=p id=pr><h6>No selection</h6></div>
+<div class=p id=al></div>
+<div class=p id=hint>White squares resize (Ctrl = keep proportions) · colored dots rotate (Alt = free angle) · black arrow lifts · Left-drag move · Alt+drag lift · Shift+click multi-select · Right-drag orbit · Shift+right-drag or middle-drag pan · Wheel zoom · Ctrl+Z/Y undo/redo · Ctrl+D duplicate · Ctrl+G group (Shift+G ungroup) · L align · M measure · H hide · O ortho · Arrows nudge (Shift = x10, PgUp/PgDn = up/down) · Del delete</div>
+<div id=wn></div>
+<input type=file id=fl accept=".json,.stl,.svg" hidden>
+<script>
+const $=s=>document.querySelector(s),cv=$('#c'),gl=cv.getContext('webgl')||cv.getContext('experimental-webgl');
+if(!gl){document.body.insertAdjacentHTML('beforeend','<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font:16px system-ui;background:#fff;z-index:99">WebGL is not available in this browser, so the 3D view cannot start.<br>Try Firefox or Chrome with hardware acceleration enabled.</div>');throw new Error('WebGL unavailable')}
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+norm=a=>{const l=Math.hypot(...a);return l>1e-9?a.map(x=>x/l):[0,0,1]},
+lerp=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t],
+rgb=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16)/255);
+
+/* ---------- language (EN / IT / ES) ---------- */
+const LANGS=['en','it','es'];let LANG='en';try{const v=localStorage.getItem('plateLang');if(LANGS.includes(v))LANG=v}catch(e){}
+const DICT={};
+`Undo|Annulla|Deshacer
+Redo|Ripeti|Rehacer
+Reset layout|Ripristina layout|Restablecer diseño
+Group|Raggruppa|Agrupar
+Ungroup|Separa|Desagrupar
+Duplicate|Duplica|Duplicar
+Array|Matrice|Matriz
+Delete|Elimina|Eliminar
+Mirror X|Specchio X|Espejo X
+Mirror Y|Specchio Y|Espejo Y
+Mirror Z|Specchio Z|Espejo Z
+To plate|Sul piano|Al plano
+Align (L)|Allinea (L)|Alinear (L)
+Hide (H)|Nascondi (H)|Ocultar (H)
+Show all|Mostra tutto|Mostrar todo
+Measure (M)|Misura (M)|Medir (M)
+Ortho (O)|Ortogonale (O)|Ortogonal (O)
+Front|Fronte|Frente
+Top|Alto|Superior
+Right|Destra|Derecha
+Left|Sinistra|Izquierda
+Back|Retro|Atrás
+Bottom|Basso|Inferior
+Middle|Mezzo|Medio
+Center|Centro|Centro
+Save|Salva|Guardar
+Open / Import|Apri / Importa|Abrir / Importar
+Export STL|Esporta STL|Exportar STL
+Export OBJ|Esporta OBJ|Exportar OBJ
+Export 3MF|Esporta 3MF|Exportar 3MF
+Sketch / Text|Schizzo / Testo|Boceto / Texto
+No selection|Nessuna selezione|Ninguna selección
+shapes selected|forme selezionate|formas seleccionadas
+Width (mm)|Larghezza (mm)|Ancho (mm)
+Depth (mm)|Profondità (mm)|Profundidad (mm)
+Height (mm)|Altezza (mm)|Altura (mm)
+Rot X (deg)|Rot. X (gradi)|Rot. X (grados)
+Rot Y (deg)|Rot. Y (gradi)|Rot. Y (grados)
+Rot Z (deg)|Rot. Z (gradi)|Rot. Z (grados)
+Radius (mm)|Raggio (mm)|Radio (mm)
+Sides|Lati|Lados
+Teeth|Denti|Dientes
+Wall (mm)|Spessore parete (mm)|Espesor de pared (mm)
+Tooth depth (mm)|Altezza dente (mm)|Profundidad del diente (mm)
+Pitch (mm)|Passo (mm)|Paso (mm)
+Thickness (mm)|Spessore (mm)|Grosor (mm)
+Hole|Foro|Hueco
+Color|Colore|Color
+Keep ratio|Mantieni proporzioni|Mantener proporción
+Grid snap (mm)|Aggancio griglia (mm)|Ajuste a cuadrícula (mm)
+Array (copies of the selection)|Matrice (copie della selezione)|Matriz (copias de la selección)
+Mode|Modalità|Modo
+Linear|Lineare|Lineal
+Circular|Circolare|Circular
+Total count|Numero totale|Cantidad total
+Step X (mm)|Passo X (mm)|Paso X (mm)
+Step Y (mm)|Passo Y (mm)|Paso Y (mm)
+Step Z (mm)|Passo Z (mm)|Paso Z (mm)
+Center X (circular)|Centro X (circolare)|Centro X (circular)
+Center Y (circular)|Centro Y (circolare)|Centro Y (circular)
+Angle, deg (circular)|Angolo, gradi (circolare)|Ángulo, grados (circular)
+Apply|Applica|Aplicar
+Close|Chiudi|Cerrar
+Create|Crea|Crear
+Done|Fatto|Listo
+Extrude|Estrudi|Extruir
+Revolve|Rivoluzione|Revolución
+Text|Testo|Texto
+Letter size (mm)|Dimensione lettere (mm)|Tamaño de letra (mm)
+Aligning to REF shape|Allineamento alla forma REF|Alineando a la forma REF
+Aligning to selection|Allineamento alla selezione|Alineando a la selección
+Outliner|Oggetti|Objetos
+hide|nascondi|ocultar
+hidden|nascosto|oculto
+hole|foro|hueco
+shape|forma|forma
+Drag to move this window (double-click to reset its position)|Trascina per spostare questa finestra (doppio clic per ripristinare la posizione)|Arrastra para mover esta ventana (doble clic para restablecer su posición)
+Click an axis end to look from that side, centre = isometric|Clicca l'estremità di un asse per guardare da quel lato, centro = isometrica|Haz clic en el extremo de un eje para mirar desde ese lado, centro = isométrica
+Measure: click two points (Esc exits)|Misura: clicca due punti (Esc per uscire)|Medir: haz clic en dos puntos (Esc para salir)
+Nothing to export|Niente da esportare|Nada que exportar
+Use at most 3 slice planes at once|Usa al massimo 3 piani di taglio alla volta|Usa como máximo 3 planos de corte a la vez
+Unexpected error|Errore imprevisto|Error inesperado
+Undo history could not be saved for this step|Impossibile salvare la cronologia di annullamento per questo passaggio|No se pudo guardar el historial de deshacer para este paso
+There is no solid shape to slice|Non c'è nessuna forma solida da tagliare|No hay ninguna forma sólida que cortar
+The slice plane does not cross the shape, nothing was cut|Il piano di taglio non attraversa la forma, nulla è stato tagliato|El plano de corte no atraviesa la forma, no se cortó nada
+Slice failed|Taglio non riuscito|El corte falló
+Select the slice plane together with at least one shape, then press Group|Seleziona il piano di taglio insieme ad almeno una forma, poi premi Raggruppa|Selecciona el plano de corte junto con al menos una forma y pulsa Agrupar
+Invalid radius value|Valore del raggio non valido|Valor de radio no válido
+Invalid number in this field|Numero non valido in questo campo|Número no válido en este campo
+Hole cut failed: the hole was ignored|Foro non riuscito: il foro è stato ignorato|Falló el hueco: se ignoró el hueco
+Combine failed: shapes were merged without cutting|Unione non riuscita: le forme sono state unite senza tagliare|Falló la combinación: las formas se unieron sin cortar
+A hole does not touch any solid: it will have no effect|Un foro non tocca nessun solido: non avrà alcun effetto|Un hueco no toca ningún sólido: no tendrá ningún efecto
+Revolve radius cannot be negative|Il raggio di rivoluzione non può essere negativo|El radio de revolución no puede ser negativo
+Nothing left after grouping|Non resta nulla dopo il raggruppamento|No queda nada tras agrupar
+Not an SVG file|Non è un file SVG|No es un archivo SVG
+No triangles found|Nessun triangolo trovato|No se encontraron triángulos
+No text|Nessun testo|Sin texto
+No shapes found in SVG|Nessuna forma trovata nell'SVG|No se encontraron formas en el SVG
+Need at least 3 points|Servono almeno 3 punti|Se necesitan al menos 3 puntos
+Height must be > 0|L'altezza deve essere > 0|La altura debe ser > 0
+Failed to load file safely.|Impossibile caricare il file in sicurezza.|No se pudo cargar el archivo de forma segura.
+Could not build shape|Impossibile creare la forma|No se pudo crear la forma
+Could not build shape from SVG|Impossibile creare la forma dall'SVG|No se pudo crear la forma desde el SVG
+Extrude height (mm)|Altezza di estrusione (mm)|Altura de extrusión (mm)
+Scale drawing width in mm (0 = keep)|Larghezza del disegno in mm (0 = mantieni)|Ancho del dibujo en mm (0 = mantener)
+Restore your last session (autosaved)? OK = restore, Cancel = start empty|Ripristinare l'ultima sessione (salvata automaticamente)? OK = ripristina, Annulla = inizia da zero|¿Restaurar la última sesión (guardada automáticamente)? Aceptar = restaurar, Cancelar = empezar de cero
+Autosave is not available here: use Save to keep your work|Il salvataggio automatico non è disponibile qui: usa Salva per conservare il lavoro|El guardado automático no está disponible aquí: usa Guardar para conservar tu trabajo
+Graphics context lost: trying to recover|Contesto grafico perso: provo a ripristinarlo|Contexto gráfico perdido: intentando recuperarlo
+View was reset (invalid camera)|Vista ripristinata (camera non valida)|Vista restablecida (cámara no válida)
+A shape could not be built and is shown empty|Impossibile creare una forma: viene mostrata vuota|No se pudo crear una forma: se muestra vacía
+Rendering problem: if the view stays blank, reload the page (your work is autosaved)|Problema di rendering: se la vista resta vuota, ricarica la pagina (il lavoro è salvato automaticamente)|Problema de renderizado: si la vista sigue en blanco, recarga la página (tu trabajo se guarda automáticamente)
+Damaged shapes were skipped|Forme danneggiate ignorate|Formas dañadas omitidas
+Mesh too large (limit 200000 triangles)|Mesh troppo grande (limite 200000 triangoli)|Malla demasiado grande (límite 200000 triángulos)
+SVG is too complex|SVG troppo complesso|SVG demasiado complejo
+Array too large|Matrice troppo grande|Matriz demasiado grande
+Too many points (max 2000)|Troppi punti (max 2000)|Demasiados puntos (máx. 2000)
+Shapes too complex to combine safely: merged without cutting|Forme troppo complesse da unire in sicurezza: unite senza tagliare|Formas demasiado complejas para combinar con seguridad: unidas sin cortar
+Shapes too complex to cut safely: the hole was ignored|Forme troppo complesse da tagliare in sicurezza: il foro è stato ignorato|Formas demasiado complejas para cortar con seguridad: se ignoró el hueco
+Could not save the project|Impossibile salvare il progetto|No se pudo guardar el proyecto
+File too large|File troppo grande|Archivo demasiado grande
+Not a valid project file|File di progetto non valido|Archivo de proyecto no válido
+@@HINT@@|I quadrati bianchi ridimensionano (Ctrl = mantieni proporzioni) · i punti colorati ruotano (Alt = angolo libero) · la freccia nera solleva · Trascina con il tasto sinistro per spostare · Alt+trascina solleva · Shift+clic selezione multipla · Trascina con il destro per orbitare · Shift+destro o trascina con il centrale per spostare la vista · Rotella per lo zoom · Ctrl+Z/Y annulla/ripeti · Ctrl+D duplica · Ctrl+G raggruppa (Shift+G separa) · L allinea · M misura · H nascondi · O ortogonale · Frecce per spostare (Shift = x10, PgSu/PgGiù = su/giù) · Canc elimina|Los cuadrados blancos cambian el tamaño (Ctrl = mantener proporciones) · los puntos de color giran (Alt = ángulo libre) · la flecha negra eleva · Arrastrar con el botón izquierdo mueve · Alt+arrastrar eleva · Shift+clic selección múltiple · Arrastrar con el derecho orbita · Shift+derecho o arrastrar con el central desplaza la vista · Rueda para zoom · Ctrl+Z/Y deshacer/rehacer · Ctrl+D duplicar · Ctrl+G agrupar (Shift+G desagrupar) · L alinear · M medir · H ocultar · O ortogonal · Flechas para mover (Shift = x10, RePág/AvPág = arriba/abajo) · Supr eliminar`.replace('@@HINT@@','White squares resize (Ctrl = keep proportions) · colored dots rotate (Alt = free angle) · black arrow lifts · Left-drag move · Alt+drag lift · Shift+click multi-select · Right-drag orbit · Shift+right-drag or middle-drag pan · Wheel zoom · Ctrl+Z/Y undo/redo · Ctrl+D duplicate · Ctrl+G group (Shift+G ungroup) · L align · M measure · H hide · O ortho · Arrows nudge (Shift = x10, PgUp/PgDn = up/down) · Del delete').split('\n').forEach(l=>{const a=l.split('|');if(a.length==3)DICT[a[0]]=[a[1],a[2]]});
+const cap=s=>s[0].toUpperCase()+s.slice(1);
+`box|scatola|caja
+cylinder|cilindro|cilindro
+sphere|sfera|esfera
+cone|cono|cono
+pyramid|piramide|pirámide
+wedge|cuneo|cuña
+roof|tetto|tejado
+torus|toro|toro
+prism|prisma|prisma
+tube|tubo|tubo
+ring|anello|anillo
+hemi|semisfera|hemisferio
+slot|asola|ranura
+gear|ingranaggio|engranaje
+screw|vite|tornillo
+hook|gancio|gancho
+slice|taglio|corte`.split('\n').forEach(l=>{const[k,i,s]=l.split('|');DICT[k]=[i,s];DICT[cap(k)]=[cap(i),cap(s)]});
+function T(s){if(LANG=='en'||typeof s!='string')return s;const x=LANG=='it'?0:1;let e=DICT[s];if(e)return e[x];const i=s.indexOf(': ');if(i>0){e=DICT[s.slice(0,i)];if(e)return e[x]+s.slice(i)}return s}
+const _al=window.alert.bind(window),_pm=window.prompt.bind(window);window.alert=m=>_al(T(m));window.prompt=(m,d)=>_pm(T(m),d);
+function trAll(){const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT),L=[];let n;while(n=w.nextNode())L.push(n);
+for(const n of L){const p=n.parentElement;if(!p||p.closest('script,style,textarea,#lg'))continue;if(n._o===undefined){if(!n.nodeValue.trim())continue;n._o=n.nodeValue}
+const s=n._o,a=s.match(/^\s*/)[0],z=s.match(/\s*$/)[0];n.nodeValue=a+T(s.trim())+z}
+document.querySelectorAll('[title]').forEach(e=>{if(e._ot===undefined)e._ot=e.title;e.title=T(e._ot)})}
+function applyLang(){document.documentElement.lang=LANG;trAll();olK='';ui();const g=$('#lg');if(g)g.textContent=LANG.toUpperCase()}
+
+let wT=0;function warn(m,ms){const w=$('#wn');if(!w)return;w.textContent='\u26a0 '+T(m);w.style.display='block';clearTimeout(wT);wT=setTimeout(()=>w.style.display='none',ms||4000)}
+addEventListener('error',e=>warn('Unexpected error: '+(e.message||'unknown')));addEventListener('unhandledrejection',e=>warn('Unexpected error: '+((e.reason&&e.reason.message)||'unknown')));
+/* ---------- CSG (BSP) with Safety Boundaries ---------- */
+const EPS=1e-5;
+class Poly{constructor(v,n,w,c){this.v=v;this.c=c;this.ok=true;if(n){this.n=n;this.w=w}else{const a=[0,0,0];
+for(let i=0;i<v.length;i++){const p=v[i],q=v[(i+1)%v.length];a[0]+=(p[1]-q[1])*(p[2]+q[2]);a[1]+=(p[2]-q[2])*(p[0]+q[0]);a[2]+=(p[0]-q[0])*(p[1]+q[1])}
+const l=Math.hypot(...a);this.ok=l>1e-9;this.n=l>1e-9?a.map(x=>x/l):[0,0,1];this.w=this.ok?dot(this.n,v[0]):0}}
+flip(){this.v.reverse();this.n=this.n.map(x=>-x);this.w=-this.w}}
+function split(pn,pw,p,cf,cb,f,b){let pt=0;const ty=p.v.map(v=>{const t=dot(pn,v)-pw,k=t<-EPS?2:t>EPS?1:0;pt|=k;return k});
+if(!pt)(dot(pn,p.n)>0?cf:cb).push(p);else if(pt==1)f.push(p);else if(pt==2)b.push(p);
+else{const F=[],B=[],n=p.v.length;for(let i=0;i<n;i++){const j=(i+1)%n,vi=p.v[i],vj=p.v[j];
+if(ty[i]!=2)F.push(vi);if(ty[i]!=1)B.push(vi);
+if((ty[i]|ty[j])==3){const denom=dot(pn,sub(vj,vi));const v=lerp(vi,vj,Math.abs(denom)>1e-12?(pw-dot(pn,vi))/denom:0);F.push(v);B.push(v)}}
+if(F.length>=3)f.push(new Poly(F,p.n,p.w,p.c));if(B.length>=3)b.push(new Poly(B,p.n,p.w,p.c))}}
+class Node{constructor(P){this.n=null;this.w=0;this.f=null;this.b=null;this.p=[];if(P)this.build(P)}
+invert(){this.p.forEach(p=>p.flip());this.n=this.n.map(x=>-x);this.w=-this.w;this.f&&this.f.invert();this.b&&this.b.invert();[this.f,this.b]=[this.b,this.f]}
+clip(P){if(!this.n)return P.slice();let f=[],b=[];for(const p of P)split(this.n,this.w,p,f,b,f,b);
+f=this.f?this.f.clip(f):f;b=this.b?this.b.clip(b):[];return f.concat(b)}
+clipTo(t){this.p=t.clip(this.p);this.f&&this.f.clipTo(t);this.b&&this.b.clipTo(t)}
+all(){let r=this.p.slice();if(this.f)r=r.concat(this.f.all());if(this.b)r=r.concat(this.b.all());return r}
+build(P){if(!P.length)return;if(!this.n){this.n=P[0].n;this.w=P[0].w}const f=[],b=[];
+for(const p of P)split(this.n,this.w,p,this.p,this.p,f,b);
+if(f.length){this.f=this.f||new Node;this.f.build(f)}if(b.length){this.b=this.b||new Node;this.b.build(b)}}}
+const cl_=P=>P.map(p=>new Poly(p.v.map(v=>v.slice()),p.n,p.w,p.c));
+const CSG_MAX=50000;
+function csgU(A,B){if(A.length+B.length>CSG_MAX){warn('Shapes too complex to combine safely: merged without cutting');return A.concat(B)}try{const a=new Node(cl_(A)),b=new Node(cl_(B));a.clipTo(b);b.clipTo(a);b.invert();b.clipTo(a);b.invert();a.build(b.all());return a.all()}catch(e){console.warn('CSG union fallback',e);warn('Combine failed: shapes were merged without cutting');return A.concat(B)}}
+function csgS(A,B){if(A.length+B.length>CSG_MAX){warn('Shapes too complex to cut safely: the hole was ignored');return A}try{const a=new Node(cl_(A)),b=new Node(cl_(B));a.invert();a.clipTo(b);b.clipTo(a);b.invert();b.clipTo(a);b.invert();a.build(b.all());a.invert();return a.all()}catch(e){console.warn('CSG subtraction fallback',e);warn('Hole cut failed: the hole was ignored');return A}}
+
+/* ---------- primitives & geometry ---------- */
+function solid(V,F){const c=[0,1,2].map(i=>V.reduce((s,v)=>s+v[i],0)/V.length),out=[];
+for(const f of F)for(let i=1;i<f.length-1;i++){let t=[V[f[0]],V[f[i]],V[f[i+1]]];
+if(dot(cross(sub(t[1],t[0]),sub(t[2],t[0])),sub(t[0],c))<0)t=[t[0],t[2],t[1]];out.push(t)}return out}
+const ng=n=>Array.from({length:n},(_,i)=>[.5*Math.cos(2*Math.PI*i/n),.5*Math.sin(2*Math.PI*i/n)]),
+sq=[[-.5,-.5],[.5,-.5],[.5,.5],[-.5,.5]],rg=n=>[...Array(n).keys()];
+const prism=pts=>{const n=pts.length,V=[...pts.map(p=>[p[0],p[1],0]),...pts.map(p=>[p[0],p[1],1])],F=[rg(n),rg(n).map(i=>i+n)];
+for(let i=0;i<n;i++)F.push([i,(i+1)%n,(i+1)%n+n,i+n]);return solid(V,F)};
+const pyr=pts=>{const n=pts.length,V=[...pts.map(p=>[p[0],p[1],0]),[0,0,1]],F=[rg(n)];for(let i=0;i<n;i++)F.push([i,(i+1)%n,n]);return solid(V,F)};
+function sphere(){const S=36,R=20,V=[[0,0,0],[0,0,1]],F=[],ix=(j,i)=>2+(j-1)*S+i%S;
+for(let j=1;j<R;j++){const ph=Math.PI*j/R;for(let i=0;i<S;i++){const u=2*Math.PI*i/S;V.push([.5*Math.sin(ph)*Math.cos(u),.5*Math.sin(ph)*Math.sin(u),.5-.5*Math.cos(ph)])}}
+for(let i=0;i<S;i++){F.push([0,ix(1,i),ix(1,i+1)],[1,ix(R-1,i),ix(R-1,i+1)]);for(let j=1;j<R-1;j++)F.push([ix(j,i),ix(j,i+1),ix(j+1,i+1),ix(j+1,i)])}
+return solid(V,F)}
+function torus(){const U=44,Vn=20,P=(i,j)=>{const u=2*Math.PI*(i%U)/U,v=2*Math.PI*(j%Vn)/Vn,r=.3+.2*Math.cos(v);return[r*Math.cos(u),r*Math.sin(u),.5+.5*Math.sin(v)]},o=[];
+for(let i=0;i<U;i++)for(let j=0;j<Vn;j++){o.push([P(i,j),P(i+1,j),P(i,j+1)],[P(i+1,j),P(i+1,j+1),P(i,j+1)])}return o}
+const wedge=()=>solid([[-.5,-.5,0],[.5,-.5,0],[.5,.5,0],[-.5,.5,0],[-.5,.5,1],[.5,.5,1]],[[0,1,2,3],[3,2,5,4],[0,1,5,4],[0,3,4],[1,2,5]]),
+roof=()=>solid([[-.5,-.5,0],[.5,-.5,0],[.5,.5,0],[-.5,.5,0],[0,-.5,1],[0,.5,1]],[[0,1,2,3],[0,3,5,4],[1,2,5,4],[0,1,4],[3,2,5]]);
+const PR={box:[()=>prism(sq),[20,20,20]],cylinder:[()=>prism(ng(96)),[20,20,20]],sphere:[sphere,[20,20,20]],cone:[()=>pyr(ng(96)),[20,20,20]],
+pyramid:[()=>pyr(sq),[20,20,20]],wedge:[wedge,[20,20,20]],roof:[roof,[20,20,20]],torus:[torus,[30,30,12]],
+prism:[()=>[],[20,17.32,20],{n:6}],tube:[()=>[],[20,20,20],{wall:3}],ring:[()=>[],[30,30,4],{wall:4}],hemi:[hemi,[20,20,10]],slot:[()=>[],[40,20,10]],gear:[()=>[],[40,40,6],{n:16,wall:3}],screw:[()=>[],[10,10,20],{wall:1.5}],hook:[()=>[],[30,40,6],{wall:4}],slice:[()=>prism(sq),[100,100,.2],{slice:true}]};
+const COL={box:'#e53935',cylinder:'#1e88e5',sphere:'#fdd835',cone:'#8e24aa',pyramid:'#fb8c00',wedge:'#d81b60',roof:'#6d4c41',torus:'#00bcd4',prism:'#3949ab',tube:'#9e9e9e',ring:'#b8860b',hemi:'#ff8a65',slot:'#455a64',gear:'#26a69a',screw:'#8d6e63',hook:'#5c6bc0',slice:'#00e5ff'};
+const MESH={};for(const k in PR)MESH[k]=PR[k][0]();
+
+/* ---------- rounded edges & robust base builders ---------- */
+const RAD={box:1,cylinder:1,cone:1,wedge:1,roof:1};
+function rmax(o){const[w,d,h]=o.size,t=o.type;if(t=='box')return Math.min(w,d,h)/2;
+if(t=='cone'){const R=w/2,L=Math.hypot(R,h);return Math.tan(Math.atan2(h,R)/2)*Math.min(R,L/2)}return Math.min(t=='wedge'?d:w,h)/2}
+function fil(P,r,m){const n=P.length,o=[];for(let i=0;i<n;i++){const a=P[(i+n-1)%n],b=P[i],c=P[(i+1)%n],e1=[a[0]-b[0],a[1]-b[1]],e2=[c[0]-b[0],c[1]-b[1]],
+l1=Math.hypot(...e1),l2=Math.hypot(...e2),u=l1>1e-9?e1.map(x=>x/l1):[0,0],v=l2>1e-9?e2.map(x=>x/l2):[0,0],an=Math.acos(Math.max(-1,Math.min(1,u[0]*v[0]+u[1]*v[1]))),tn=Math.tan(an/2),
+rr=Math.min(r,tn*Math.min(l1,l2)/2),t=rr/tn;if(!(rr>1e-6)){o.push(b);continue}
+const bs=norm([u[0]+v[0],u[1]+v[1],0]),sinAn=Math.sin(an/2),cn=[b[0]+bs[0]*rr/(Math.abs(sinAn)>1e-9?sinAn:1),b[1]+bs[1]*rr/(Math.abs(sinAn)>1e-9?sinAn:1)],
+T1=[b[0]+u[0]*t,b[1]+u[1]*t],T2=[b[0]+v[0]*t,b[1]+v[1]*t],t1=Math.atan2(T1[1]-cn[1],T1[0]-cn[0]);
+let df=Math.atan2(T2[1]-cn[1],T2[0]-cn[0])-t1;df=Math.atan2(Math.sin(df),Math.cos(df));
+for(let k=0;k<=m;k++){const q=t1+df*k/m;o.push([cn[0]+rr*Math.cos(q),cn[1]+rr*Math.sin(q)])}}return o}
+function rbase(o){if(!RAD[o.type])return rb2(o);const[w,d,h]=o.size,t=o.type,r=Math.min(o.rad,rmax(o)),V=[],F=[];let zo=0;
+if(t=='box'){zo=h/2;const m=3,hs=[w/2,d/2,h/2],ax=H=>{const a=[];for(let k=m;k>=0;k--)a.push(-(H-r)-r*Math.tan(Math.PI/4*k/m));return a.concat(a.map(x=>-x).reverse())},A=hs.map(ax),
+q=p=>{const c=p.map((v,i)=>Math.max(-(hs[i]-r),Math.min(hs[i]-r,v))),e=p.map((v,i)=>v-c[i]),l=Math.hypot(...e);return l>1e-9?c.map((v,i)=>v+e[i]/l*r):p};
+for(let n=0;n<3;n++)for(const s of[-1,1]){const i=(n+1)%3,j=(n+2)%3,a=A[i].length,b=A[j].length,o0=V.length;
+for(let x=0;x<a;x++)for(let y=0;y<b;y++){const p=[0,0,0];p[n]=s*hs[n];p[i]=A[i][x];p[j]=A[j][y];V.push(q(p))}
+for(let x=0;x<a-1;x++)for(let y=0;y<b-1;y++)F.push([o0+x*b+y,o0+(x+1)*b+y,o0+(x+1)*b+y+1,o0+x*b+y+1])}}
+else if(t=='cylinder'||t=='cone'){const R=w/2,N=96,M=8,ar=[];let P;
+if(t=='cylinder'){for(let k=0;k<=M;k++){const th=Math.PI/2*k/M;ar.push([R-r+r*Math.sin(th),h-r+r*Math.cos(th)])}P=[[0,h],...ar,...ar.map(p=>[p[0],h-p[1]]).reverse(),[0,0]]}
+else{const al=Math.atan2(h,R),tt=r/Math.tan(al/2),b0=-Math.PI/2,b1=Math.atan2(R,h);for(let k=0;k<=M;k++){const be=b0+(b1-b0)*k/M;ar.push([R-tt+r*Math.cos(be),r+r*Math.sin(be)])}P=[[0,h],...ar.reverse(),[0,0]]}
+const I=P.map(([pr,pz])=>{if(pr<1e-9){V.push([0,0,pz]);return[V.length-1]}const a=[];for(let s=0;s<N;s++){const g=2*Math.PI*s/N;a.push(V.push([pr*Math.cos(g),pr*Math.sin(g)*d/w,pz])-1)}return a});
+for(let i=0;i<P.length-1;i++){const a=I[i],b=I[i+1];for(let s=0;s<N;s++){const s1=(s+1)%N,A0=a[a.length>1?s:0],A1=a[a.length>1?s1:0],B0=b[b.length>1?s:0],B1=b[b.length>1?s1:0];
+F.push(A0==A1?[A0,B0,B1]:B0==B1?[A0,B0,A1]:[A0,B0,B1,A1])}}}
+else{const P=t=='roof'?[[-w/2,0],[w/2,0],[0,h]]:[[-d/2,0],[d/2,0],[d/2,h]],L=t=='roof'?d:w,pf=fil(P,r,8),n=pf.length;
+for(const e of[-L/2,L/2])for(const p of pf)V.push(t=='roof'?[p[0],e,p[1]]:[e,p[0],p[1]]);
+F.push(rg(n),rg(n).map(i=>i+n));for(let i=0;i<n;i++)F.push([i,(i+1)%n,(i+1)%n+n,i+n])}
+return solid(V,F).map(p=>p.map(v=>[v[0]/w,v[1]/d,(v[2]+zo)/h]))}
+
+/* ---------- safe state & object management ---------- */
+let objects=[],sel=[],UN=[],RE=[],alMode=false,alRef=null,msr=false,mp=[],ORT=false,modified=false,asDirty=false,asOK=false,asFail=false,asT=0,asP=Promise.resolve();
+const cp=o=>({...o,pos:[...o.pos],size:[...o.size],rot:[...o.rot],_c:null}),cpAll=a=>a.map(cp);
+const SC=new WeakMap(),sgk=(k,v)=>k=='_c'||k=='base'||k=='kids'?undefined:v;
+const frozen=o=>{const t=JSON.stringify(o,sgk),e=SC.get(o);if(e&&e.s===t&&e.b===o.base&&e.k===o.kids)return e.c;const c=cp(o);SC.set(o,{s:t,b:o.base,k:o.kids,c});return c};
+const shot=()=>objects.map(frozen),thaw=a=>a.map(cp);
+const snap=()=>{modified=asDirty=true;try{UN.push(shot());RE=[];if(UN.length>200)UN.shift()}catch(e){warn('Undo history could not be saved for this step')}};
+const fin=(a,d,pz)=>{const g=v=>typeof v=='number'&&isFinite(v)&&(!pz||v>0);if(Array.isArray(a)&&a.length==3&&a.every(g))return a;return[0,1,2].map(i=>{const v=Array.isArray(a)?a[i]:NaN;return g(v)?v:d})};
+function fixNum(o){o.pos=fin(o.pos,0);o.rot=fin(o.rot,0);o.size=fin(o.size,1,true)}
+function touch(o){fixNum(o);if(o._c){try{gl.deleteBuffer(o._c.b)}catch(e){}o._c=null}
+const nf=NEEDS[o.type];if(nf){const k=nf(o)?o.size.join()+'|'+(o.rad||0)+'|'+(o.wall||0)+'|'+(o.n||0):'';if(o._k!==k){o._k=k;o.base=k?rbase(o):MESH[o.type]}}}
+function bake(o){const[sx,sy,sz]=o.size,[a,b,c]=o.rot.map(d=>d*Math.PI/180),cx=Math.cos(a),sX=Math.sin(a),cy=Math.cos(b),sY=Math.sin(b),cz=Math.cos(c),sZ=Math.sin(c);
+const T=q=>{let x=q[0]*sx,y=q[1]*sy,z=q[2]*sz-sz/2,t=y*cx-z*sX;z=y*sX+z*cx;y=t;t=x*cy+z*sY;z=-x*sY+z*cy;x=t;t=x*cz-y*sZ;y=x*sZ+y*cz;x=t;
+return[x+o.pos[0],y+o.pos[1],z+sz/2+o.pos[2]]};return o.base.map((p,i)=>{const q=new Poly(p.map(T));q.c=o.cols?o.cols[i]:o.col;return q}).filter(p=>p.ok)}
+function geo(o){if(o._c)return o._c;try{return geo0(o)}catch(e){console.error('geometry failed',e);if(!o._bad){o._bad=1;warn('A shape could not be built and is shown empty')}
+const p=Array.isArray(o.pos)?o.pos.map(v=>+v||0):[0,0,0];return o._c={f:new Float32Array(0),b:null,n:0,bb:[p[0],p[1],p[2],p[0],p[1],p[2]]}}}
+function geo0(o){if(o._c)return o._c;const P=bake(o),a=[];
+for(const p of P){const c=rgb(p.c||o.col);for(let i=1;i<p.v.length-1;i++)for(const v of[p.v[0],p.v[i],p.v[i+1]])a.push(v[0],v[1],v[2],p.n[0],p.n[1],p.n[2],c[0],c[1],c[2])}
+const f=new Float32Array(a),b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,f,gl.STATIC_DRAW);const bb=[1e9,1e9,1e9,-1e9,-1e9,-1e9];for(let i=0;i<f.length;i+=9)for(let k=0;k<3;k++){bb[k]=Math.min(bb[k],f[i+k]);bb[k+3]=Math.max(bb[k+3],f[i+k])}
+return o._c={f,b,n:f.length/9,bb}}
+function fromPolys(P,e={}){const m=[1e9,1e9,1e9],M=[-1e9,-1e9,-1e9];
+for(const p of P)for(const v of p.v)for(let i=0;i<3;i++){m[i]=Math.min(m[i],v[i]);M[i]=Math.max(M[i],v[i])}
+const s=[0,1,2].map(i=>Math.max(M[i]-m[i],1e-3)),c=[(m[0]+M[0])/2,(m[1]+M[1])/2,m[2]];
+return{type:'mesh',base:P.map(p=>p.v.map(v=>[(v[0]-c[0])/s[0],(v[1]-c[1])/s[1],(v[2]-c[2])/s[2]])),pos:c,size:s,rot:[0,0,0],hole:false,col:'#f08a24',cols:P.every(p=>p.c)?P.map(p=>p.c):undefined,_c:null,...e}}
+function build(L){const s=L.filter(o=>!o.hole),h=L.filter(o=>o.hole),un=a=>a.map(bake).reduce(csgU);
+if(!s.length)return h.length?{P:un(h),hole:true}:null;const a=un(s);return{P:h.length?csgS(a,un(h).map(p=>(p.c=s[0].col,p))):a,hole:false}}
+
+/* ---------- robust operations ---------- */
+const SNv=()=>+$('#sp').value,sn=v=>+(Math.round(v/SNv())*SNv()).toFixed(4),cl=v=>Math.max(-1000,Math.min(1000,v));
+function add(t){snap();const o={type:t,base:MESH[t],pos:[0,0,0],size:[...PR[t][1]],rot:[0,0,0],hole:false,col:COL[t],rad:0,...(PR[t][2]||{}),_c:null};if(NEEDS[t])touch(o);objects.push(o);sel=[o];ui()}
+function undo(){if(!UN.length)return;modified=asDirty=true;RE.push(shot());objects.forEach(touch);objects=thaw(UN.pop());sel=[];ui()}
+function redo(){if(!RE.length)return;modified=asDirty=true;UN.push(shot());objects.forEach(touch);objects=thaw(RE.pop());sel=[];ui()}
+function del(){if(!sel.length)return;snap();sel.forEach(touch);objects=objects.filter(o=>!sel.includes(o));sel=[];ui()}
+function dup(){if(!sel.length)return;snap();const c=sel.map(o=>{const n=cp(o);n.pos=[cl(o.pos[0]+10),cl(o.pos[1]+10),o.pos[2]];return n});objects.push(...c);sel=c;ui()}
+function sliceCut(){const S=sel.filter(o=>o.slice),R=sel.filter(o=>!o.slice);if(!R.length)return warn('Select the slice plane together with at least one shape, then press Group');if(S.length>3)return warn('Use at most 3 slice planes at once');
+const rr=build(R);if(!rr||rr.hole||!rr.P.length)return warn('There is no solid shape to slice');const col=(R.find(o=>!o.hole)||R[0]).col;let parts=[rr.P];
+try{for(const sl of S){const M=eR(sl.rot),c=[sl.pos[0],sl.pos[1],sl.pos[2]+sl.size[2]/2],half=g=>bake({base:MESH.box,size:[1e4,1e4,5e3],rot:[...sl.rot],pos:[0,1,2].map(i=>c[i]+M[i][2]*2500*g-(i==2?2500:0)),col}),up=half(1),dn=half(-1),np=[];
+for(const P of parts){const a=csgS(P,up),b=csgS(P,dn);if(a===P||b===P)throw new Error('boolean failed');if(a.length)np.push(a);if(b.length)np.push(b)}parts=np}}catch(e){return warn('Slice failed: '+e.message)}
+if(parts.length<2)return warn('The slice plane does not cross the shape, nothing was cut');
+snap();sel.forEach(touch);objects=objects.filter(o=>!sel.includes(o));const out=parts.map(P=>fromPolys(P,{col}));objects.push(...out);sel=out;ui()}
+function group(){if(sel.length<2)return;if(sel.some(o=>o.slice))return sliceCut();const r=build(sel);chkHole(sel);if(!r||!r.P.length)return alert('Nothing left after grouping');snap();
+const f=sel.find(o=>!o.hole)||sel[0],g=fromPolys(r.P,{hole:r.hole,col:f.col,kids:sel.map(cp)});g.pos0=[...g.pos];g.size0=[...g.size];
+const i=objects.indexOf(sel[0]);sel.forEach(touch);objects=objects.filter(o=>!sel.includes(o));objects.splice(i,0,g);sel=[g];ui()}
+function ungroup(){const gs=sel.filter(o=>o.kids);if(!gs.length)return;snap();const out=[];
+for(const g of gs)for(const k of g.kids)out.push(place(g,cp(k)));
+gs.forEach(touch);objects=objects.filter(o=>!gs.includes(o)).concat(out);sel=out;ui()}
+function mir(ax){if(!sel.length)return;snap();sel=sel.map(o=>{const P=bake(o);let m=1e9,M=-1e9;P.forEach(p=>p.v.forEach(v=>{m=Math.min(m,v[ax]);M=Math.max(M,v[ax])}));
+const c=m+M,N=fromPolys(P.map(p=>new Poly(p.v.map(v=>{const w=[...v];w[ax]=c-w[ax];return w}).reverse(),undefined,undefined,p.c)),{hole:o.hole,col:o.col});
+objects[objects.indexOf(o)]=N;touch(o);return N});ui()}
+function drop(){if(!sel.length)return;snap();sel.forEach(o=>{let m=1e9;bake(o).forEach(p=>p.v.forEach(v=>m=Math.min(m,v[2])));o.pos[2]-=m;touch(o)});ui()}
+const dl=(b,n)=>{const u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=n;a.style.display='none';document.body.append(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(u)},4000)};
+/* ---------- project file, validation, autosave and recovery ---------- */
+const serialize=()=>JSON.stringify({app:'plate',version:4,objects},function(k,v){if(k=='_c'||k=='_k'||k=='_bad')return undefined;if(k=='base'&&this&&this.type&&this.type!='mesh')return undefined;return v});
+const save=()=>{try{dl(new Blob([serialize()],{type:'application/json'}),'design.json');modified=false}catch(e){alert('Could not save the project');console.error(e)}};
+const isN=v=>typeof v=='number'&&isFinite(v),HEX=/^#[0-9a-f]{6}$/i,known=t=>t=='mesh'||Object.prototype.hasOwnProperty.call(PR,t),
+v3=(a,lo,hi)=>Array.isArray(a)&&a.length==3&&a.every(isN)?a.map((v,i)=>Math.max(lo[i],Math.min(hi[i],v))):null,
+lim=(k,i,v)=>k=='pos'?(i==2?Math.max(-2e3,Math.min(2e3,v)):cl(v)):Math.max(-1e5,Math.min(1e5,v));
+function cleanObj(o,dp){
+if(!o||typeof o!='object'||dp>8||!known(o.type))return null;
+const t=o.type,W=dp?1e6:1e3,Z=dp?1e6:2e3,pos=v3(o.pos,[-W,-W,-Z],[W,W,Z]),size=v3(o.size,[1e-3,1e-3,1e-3],[1e5,1e5,1e5]),rot=v3(o.rot,[-1e5,-1e5,-1e5],[1e5,1e5,1e5]);
+if(!pos||!size||!rot)return null;
+const c={type:t,pos,size,rot,hole:!!o.hole,col:HEX.test(o.col)?o.col:(COL[t]||'#f08a24'),_c:null};
+if(o.hid)c.hid=true;if(typeof o.name=='string')c.name=o.name.slice(0,80);
+if(t=='mesh'){
+if(!Array.isArray(o.base)||!o.base.length||o.base.length>6e5)return null;
+const base=[],cols=[],hc=Array.isArray(o.cols)&&o.cols.length==o.base.length;
+o.base.forEach((p,i)=>{if(Array.isArray(p)&&p.length>=3&&p.length<=256&&p.every(q=>Array.isArray(q)&&q.length==3&&q.every(isN))){base.push(p);if(hc)cols.push(HEX.test(o.cols[i])?o.cols[i]:c.col)}});
+if(!base.length)return null;c.base=base;if(hc)c.cols=cols;
+if(Array.isArray(o.kids)){const k=o.kids.map(q=>cleanObj(q,dp+1)).filter(Boolean);
+if(k.length){c.kids=k;c.pos0=v3(o.pos0,[-1e9,-1e9,-1e9],[1e9,1e9,1e9])||[...pos];c.size0=v3(o.size0,[1e-3,1e-3,1e-3],[1e9,1e9,1e9])||[...size]}}
+}else{
+Object.assign(c,PR[t][2]||{});c.rad=isN(o.rad)?Math.max(0,Math.min(1e5,o.rad)):0;
+if(isN(o.wall))c.wall=Math.max(.05,Math.min(1e5,o.wall));if(isN(o.n))c.n=Math.max(3,Math.min(100,Math.round(o.n)));
+}
+return c}
+function revive(o){o._c=null;if(o.type!='mesh'){o.base=MESH[o.type];delete o._k;touch(o)}if(o.kids)o.kids.forEach(revive)}
+function parseProject(text){let d;try{d=JSON.parse(text)}catch(e){throw new Error('Not a valid project file')}
+const L=Array.isArray(d)?d:d&&Array.isArray(d.objects)?d.objects:null;if(!L||L.length>5000)throw new Error('Not a valid project file');
+const out=[];let bad=0;for(const o of L){const c=cleanObj(o,0);if(c)out.push(c);else bad++}
+if(!out.length&&L.length)throw new Error('Not a valid project file');
+out.forEach(revive);if(bad)warn('Damaged shapes were skipped: '+bad,7000);return out}
+const KV={db:null,
+open(){if(this.db)return Promise.resolve(this.db);return new Promise((ok,no)=>{try{const r=indexedDB.open('plateDB',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>{this.db=r.result;this.db.onclose=()=>{this.db=null};ok(r.result)};r.onerror=()=>no(r.error);r.onblocked=()=>no(new Error('blocked'))}catch(e){no(e)}})},
+async get(k){try{const db=await this.open();return await new Promise((ok,no)=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})}catch(e){try{return localStorage.getItem('plateKV_'+k)}catch(x){return null}}},
+async set(k,v){try{const db=await this.open();await new Promise((ok,no)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=ok;t.onerror=t.onabort=()=>no(t.error||new Error('abort'))});return true}catch(e){try{localStorage.setItem('plateKV_'+k,v);return true}catch(x){return false}}}};
+async function writeAS(){try{asDirty=false;const ok=await KV.set('autosave',serialize());if(ok){asOK=true;asFail=false}else if(!asFail){asFail=true;warn('Autosave is not available here: use Save to keep your work',8000)}}catch(e){asFail=true;console.warn('autosave failed',e)}}
+const doAS=()=>{asP=asP.then(writeAS,writeAS);return asP};
+async function restoreAS(){try{if(objects.length)return;let auto=false;try{auto=sessionStorage.getItem('plateReload')=='1';sessionStorage.removeItem('plateReload')}catch(e){}
+const raw=await KV.get('autosave');if(!raw||typeof raw!='string')return;const L=parseProject(raw);if(!L.length||objects.length)return;
+if(auto||confirm(T('Restore your last session (autosaved)? OK = restore, Cancel = start empty'))){objects=L;sel=[];ui()}}catch(e){console.warn('autosave restore failed',e)}}
+addEventListener('beforeunload',e=>{if(modified&&objects.length&&(asFail||asDirty||!asOK)){e.preventDefault();e.returnValue=''}});
+function exp(){const r=build((sel.length?sel:objects).filter(o=>!o.hid&&!o.slice));if(!r||r.hole||!r.P.length)return alert('Nothing to export');const T=[];
+for(const p of r.P)for(let i=1;i<p.v.length-1;i++)T.push([p.v[0],p.v[i],p.v[i+1]]);
+const b=new DataView(new ArrayBuffer(84+50*T.length));b.setUint32(80,T.length,true);let o=84;
+for(const t of T){const n=cross(sub(t[1],t[0]),sub(t[2],t[0])),l=Math.hypot(...n)||1;
+[n[0]/l,n[1]/l,n[2]/l,...t[0],...t[1],...t[2]].forEach(x=>{b.setFloat32(o,x,true);o+=4});o+=2}
+dl(new Blob([b],{type:'model/stl'}),'model.stl')}
+const STL_MAX=2e5;
+function stl(b){const dv=new DataView(b),P=[],n=dv.getUint32(80,true);
+if(84+50*n===b.byteLength){if(n>STL_MAX)return null;for(let i=0;i<n;i++){const o=84+i*50+12;P.push(new Poly([0,1,2].map(j=>[0,1,2].map(k=>dv.getFloat32(o+j*12+k*4,true)))))}}
+else{const re=/vertex\s+(\S+)\s+(\S+)\s+(\S+)/g,t=new TextDecoder().decode(b);let m,v=[];while(m=re.exec(t)){v.push([+m[1],+m[2],+m[3]]);if(v.length==3){P.push(new Poly(v));v=[];if(P.length>STL_MAX)return null}}}
+return P.filter(p=>p.ok)}
+const fl=$('#fl');fl.onchange=async()=>{try{const f=fl.files[0];if(!f)return;fl.value='';if(f.size>3e8)return alert('File too large');
+if(/\.json$/i.test(f.name)){const L=parseProject(await f.text());snap();objects.forEach(touch);objects=L;sel=[]}
+else if(/\.svg$/i.test(f.name)){svgImp(await f.text())}
+else{const P=stl(await f.arrayBuffer());if(P===null)return alert('Mesh too large (limit 200000 triangles)');if(!P.length)return alert('No triangles found');snap();const o=fromPolys(P);o.pos=[0,0,0];objects.push(o);sel=[o]}ui()}catch(e){alert('Failed to load file safely.');console.error(e)}};
+
+/* ---------- Safe UI & Math Evaluator ---------- */
+function calc(s,cur){s=String(s).trim().replace(/,/g,'.');if(!/^[0-9+\-*\/().\s]+$/.test(s))return NaN;
+try{const op=s[0];if(op=='+'||op=='*'||op=='/'){const v=Function('return('+s.slice(1)+')')();return op=='+'?cur+v:op=='*'?cur*v:cur/v}return Function('return('+s+')')()}catch(e){return NaN}}
+
+const btn=(p,t,f)=>{const b=document.createElement('button');b.textContent=t;b.onclick=f;p.append(b)};
+const TBG=[['',[['Undo',undo],['Redo',redo],['Reset layout',()=>WIN.forEach(resetPos)]]],['',[['Group',group],['Ungroup',ungroup],['Intersect',inter]]],['',[['Duplicate',dup],['Array',arTog],['Delete',del]]],
+['',[['Mirror X',()=>mir(0)],['Mirror Y',()=>mir(1)],['Mirror Z',()=>mir(2)]]],['',[['To plate',drop],['Align (L)',alTog]]],['',[['Hide (H)',hide],['Show all',unhide],['Measure (M)',mTog],['Reference image',rfTog]]],
+['rw v',[['Ortho (O)',()=>ORT=!ORT],['Front',()=>vw(0,-1.5708)],['Top',()=>vw(1.55,-1.5708)],['Right',()=>vw(0,0)]]],
+['rw f',[['Save',save],['Open / Import',()=>fl.click()],['Export STL',exp],['Export OBJ',expObj],['Export 3MF',exp3mf]]]];
+TBG.forEach(([c,L])=>{const g=document.createElement('div');g.className='tg '+c;L.forEach(([t,f])=>btn(g,t,f));$('#tb').append(g)});
+Object.keys(PR).forEach(k=>{btn($('#sh'),'',()=>add(k));$('#sh').lastChild.innerHTML=icon(k)+'<span>'+k[0].toUpperCase()+k.slice(1)+'</span>'});
+btn($('#sh'),'',skTog);$('#sh').lastChild.innerHTML='<svg viewBox="0 0 40 40" width="40" height="40"><path d="M5 31V10h15v6h-8v15z" fill="#7e57c2"/><path d="M5 31V10h15v6h-8v15z" fill="none" stroke="#4527a0" stroke-width="1" stroke-dasharray="2 2"/><text x="22" y="33" font-size="22" font-weight="bold" font-family="sans-serif" fill="#7e57c2">T</text></svg><span>Sketch / Text</span>';
+const pr=$('#pr'),F=[];
+[['Width','size',0],['Depth','size',1],['Height','size',2],['X','pos',0],['Y','pos',1],['Z','pos',2],['Rot X','rot',0],['Rot Y','rot',1],['Rot Z','rot',2]].forEach(([l,k,i])=>{
+const L=document.createElement('label'),n=document.createElement('input');L.textContent=l+(k=='rot'?' (deg)':' (mm)');n.type='text';n.disabled=true;
+n.onchange=()=>{if(sel.length!=1)return;let v=calc(n.value,sel[0][k][i]);if(!isFinite(v)||n.value===''){n.style.outline='2px solid #d33';warn('Invalid number in this field');setTimeout(ui,1200);return}snap();const o=sel[0];
+if(k=='size'){v=Math.max(.1,Math.min(1e5,v));if($('#lk').checked){const r=v/o.size[i];o.size=o.size.map(s=>Math.max(.1,Math.min(1e5,s*r)))}else o.size[i]=v}else o[k][i]=lim(k,i,v);touch(o);ui()};
+pr.append(L,n);F.push([n,k,i])});
+pr.insertAdjacentHTML('beforeend','<label>Hole</label><input type=checkbox id=ho><label>Color</label><input type=color id=co value=#f08a24><label>Keep ratio</label><input type=checkbox id=lk><label>Grid snap (mm)</label><select id=sp><option>0.1<option>0.5<option selected>1<option>2<option>5<option>10</select>');
+$('#ho').onchange=()=>{if(!sel.length)return;snap();sel.forEach(o=>o.hole=$('#ho').checked)};
+$('#co').oninput=e=>{if(!sel.length)return;if(!e.target._s){snap();e.target._s=1}sel.forEach(o=>{o.col=e.target.value;delete o.cols;touch(o)})};$('#co').onchange=e=>e.target._s=0;
+function ui(){try{sel.forEach(q=>{if(q.slice&&q.size[2]!=.2){q.size[2]=.2;touch(q)}const b=geo(q).bb;let s=0;if(b[2]<-2000)s=-2000-b[2];else if(b[5]>2000)s=2000-b[5];if(s){q.pos[2]+=s;touch(q)}});const o=sel.length==1?sel[0]:null;F.forEach(([n,k,i])=>{n.disabled=!o;n.value=o?+o[k][i].toFixed(3):'';n.style.outline=o&&k=='size'&&!(o[k][i]>0)?'2px solid #d33':''});
+const rd=$('#rd');if(rd){const ok=o&&RAD[o.type];rd.disabled=!ok;rd.value=ok?+(o.rad||0).toFixed(3):'';
+const ns=$('#ns'),wl=$('#wl'),pp=o&&(o.type=='prism'||o.type=='gear'),ww=o&&['tube','ring','gear','screw','hook'].includes(o.type);ns.previousElementSibling.textContent=T(o&&o.type=='gear'?'Teeth':'Sides');wl.previousElementSibling.textContent=T(o?({gear:'Tooth depth (mm)',screw:'Pitch (mm)',hook:'Thickness (mm)'}[o.type]||'Wall (mm)'):'Wall (mm)');ns.disabled=!pp;ns.value=pp?o.n:'';wl.disabled=!ww;wl.value=ww?+o.wall.toFixed(3):''}
+$('#ho').checked=!!sel.length&&sel[0].hole;if(sel.length)$('#co').value=sel[0].col;pr.firstChild.textContent=sel.length>1?sel.length+' '+T('shapes selected'):sel.length?T(sel[0].type):T('No selection');if(sel.length<2){alMode=false;alRef=null}if(alRef&&!sel.includes(alRef))alRef=null;
+$('#al').style.display=alMode?'grid':'none';const t=$('#alt');if(t)t.textContent=T(alRef?'Aligning to REF shape':'Aligning to selection');outl()}catch(e){console.error(e)}if(asDirty||(drag&&drag.mv)){asDirty=true;clearTimeout(asT);asT=setTimeout(doAS,1200)}};
+
+/* ---------- Events & Interactions ---------- */
+addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;if(drag)return;const k=e.key.toLowerCase();if(e.key=='Home'){e.preventDefault();resetView();return}
+if(e.key=='Delete'||e.key=='Backspace')del();else if(e.ctrlKey&&k=='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(e.ctrlKey&&k=='y'){e.preventDefault();redo()}
+else if(e.ctrlKey&&k=='d'){e.preventDefault();dup()}else if(e.ctrlKey&&k=='g'){e.preventDefault();e.shiftKey?ungroup():group()}
+else if(k=='l'&&!e.ctrlKey)alTog();else if(e.key=='Escape'&&(alMode||msr)){alMode=false;alRef=null;msr=false;mp=[];ui()}
+else if(k=='h'&&!e.ctrlKey)hide();else if(k=='m'&&!e.ctrlKey)mTog();else if(k=='o'&&!e.ctrlKey)ORT=!ORT;
+else if(/^Arrow|^Page/.test(e.key)&&sel.length){e.preventDefault();nudge(e)}});
+
+const FOV=.8,C={t:-1,p:.6,d:420,tg:[0,0,0]};
+function resetView(){C.t=-1;C.p=.6;C.d=420;C.tg=[0,0,0];ORT=false}
+function camOk(){if(![C.t,C.p,C.d,...C.tg].every(Number.isFinite)||C.tg.some(v=>Math.abs(v)>1e5)){resetView();warn('View was reset (invalid camera)')}}
+function cam(){const e=[C.tg[0]+C.d*Math.cos(C.p)*Math.cos(C.t),C.tg[1]+C.d*Math.cos(C.p)*Math.sin(C.t),C.tg[2]+C.d*Math.sin(C.p)],f=norm(sub(C.tg,e)),r=norm(cross(f,[0,0,1]));return{e,f,r,u:cross(r,f)}}
+const mul=(a,b)=>{const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s}return o};
+function mats({e,f,r,u},asp){const N=Math.max(.3,C.d*.02),Fa=C.d*4+4000,fo=1/Math.tan(FOV/2);
+const Pm=ORT?[fo/asp/C.d,0,0,0,0,fo/C.d,0,0,0,0,-2/(Fa-N),0,0,0,-(Fa+N)/(Fa-N),1]:[fo/asp,0,0,0,0,fo,0,0,0,0,(Fa+N)/(N-Fa),-1,0,0,2*Fa*N/(N-Fa),0];
+return mul(Pm,[r[0],u[0],-f[0],0,r[1],u[1],-f[1],0,r[2],u[2],-f[2],0,-dot(r,e),-dot(u,e),dot(f,e),1])}
+function ray(mx,my){const a=cam(),t=Math.tan(FOV/2),x=mx/innerWidth*2-1,y=1-my/innerHeight*2,k=innerWidth/innerHeight;
+if(ORT){const hh=C.d*t;return{o:[0,1,2].map(i=>a.e[i]+a.r[i]*x*hh*k+a.u[i]*y*hh),d:a.f}}
+return{o:a.e,d:norm([0,1,2].map(i=>a.f[i]+a.r[i]*x*t*k+a.u[i]*y*t))}}
+function pick(R){let best=null;for(const o of objects){if(o.hid)continue;const f=geo(o).f;for(let i=0;i<f.length;i+=27){
+const ax=f[i],ay=f[i+1],az=f[i+2],e1=[f[i+9]-ax,f[i+10]-ay,f[i+11]-az],e2=[f[i+18]-ax,f[i+19]-ay,f[i+20]-az],pv=cross(R.d,e2),det=dot(e1,pv);
+if(Math.abs(det)<1e-12)continue;const iv=1/det,tv=[R.o[0]-ax,R.o[1]-ay,R.o[2]-az],u=dot(tv,pv)*iv;if(u<0||u>1)continue;
+const qv=cross(tv,e1),v=dot(R.d,qv)*iv;if(v<0||u+v>1)continue;const t=dot(e2,qv)*iv;if(t>0&&(!best||t<best.t))best={o,t,i,f}}}
+if(best)best.p=[0,1,2].map(i=>R.o[i]+R.d[i]*best.t);return best}
+
+let drag=null;const ppx=h=>(ORT?C.d:Math.hypot(...sub(h,cam().e)))*2*Math.tan(FOV/2)/innerHeight;
+cv.oncontextmenu=e=>e.preventDefault();
+cv.addEventListener('webglcontextlost',e=>{e.preventDefault();warn('Graphics context lost: trying to recover',6000)});
+cv.addEventListener('webglcontextrestored',async()=>{try{await doAS()}catch(e){}try{sessionStorage.setItem('plateReload','1')}catch(e){}location.reload()});
+cv.onpointerdown=e=>{pdown0(e);if(drag&&drag.id===undefined){drag.id=e.pointerId;drag.so=sel[0]}};
+const pdown0=e=>{if(drag)return;if(e.button>2)return;HL=null;try{cv.setPointerCapture(e.pointerId)}catch(x){}
+if(e.button===0){if(rfm){rfClick(e);return}if(msr){const p=mpt(e.clientX,e.clientY);if(p){if(mp.length>1)mp=[];mp.push(p)}return}
+if(alMode){const q=pick(ray(e.clientX,e.clientY));if(q&&sel.includes(q.o)){alRef=alRef===q.o?null:q.o;ui()}return}
+const hh=hitH(e.clientX,e.clientY);if(hh){drag={k:'h',h:hh,st:{pos:[...sel[0].pos],size:[...sel[0].size],rot:[...sel[0].rot]},mv:0};return}
+const h=pick(ray(e.clientX,e.clientY));
+if(h){if(e.shiftKey)sel=sel.includes(h.o)?sel.filter(s=>s!==h.o):[...sel,h.o];else if(!sel.includes(h.o))sel=[h.o];ui();
+if(sel.includes(h.o))drag={k:e.altKey?'z':'m',h:h.p,st:sel.map(o=>[...o.pos]),mv:0,y0:e.clientY}}
+else drag={k:'box',x0:e.clientX,y0:e.clientY,x1:e.clientX,y1:e.clientY,mv:0,add:e.shiftKey}}
+else drag={k:(e.button===1||e.shiftKey)?'pan':'orb',x:e.clientX,y:e.clientY,P:anchor(e.clientX,e.clientY)}};
+cv.onpointermove=e=>{if(!drag||(drag.id!==undefined&&drag.id!==e.pointerId))return;
+if(drag.k=='orb'){const dt=-(e.clientX-drag.x)*.008,np=Math.max(-1.55,Math.min(1.55,C.p+(e.clientY-drag.y)*.008)),dp=np-C.p;
+orbitAbout(drag.P,[0,0,1],dt);C.t+=dt;orbitAbout(drag.P,[Math.sin(C.t),-Math.cos(C.t),0],dp);C.p=np;drag.x=e.clientX;drag.y=e.clientY}
+else if(drag.k=='pan'){const a=cam(),k=ppx(C.tg),dx=e.clientX-drag.x,dy=e.clientY-drag.y;C.tg=C.tg.map((v,i)=>v-a.r[i]*dx*k+a.u[i]*dy*k);drag.x=e.clientX;drag.y=e.clientY}
+else if(drag.k=='box'){drag.x1=e.clientX;drag.y1=e.clientY;if(Math.hypot(drag.x1-drag.x0,drag.y1-drag.y0)>4)drag.mv=1}
+else if(drag.k=='h'){if(sel.length==1&&sel[0]===drag.so){drag.lx=e.clientX;drag.ly=e.clientY;hdrag(e)}else drag=null}
+else{if(sel.length!=drag.st.length){drag=null;return}let dx=0,dy=0,dz=0;
+if(drag.k=='m'){const R=ray(e.clientX,e.clientY),t=(drag.h[2]-R.o[2])/R.d[2];if(!(t>0))return;dx=R.o[0]+R.d[0]*t-drag.h[0];dy=R.o[1]+R.d[1]*t-drag.h[1]}
+else dz=-(e.clientY-drag.y0)*ppx(drag.h);
+if(!drag.mv){snap();drag.mv=1}
+sel.forEach((o,i)=>{const s=drag.st[i];o.pos=[cl(sn(s[0]+dx)),cl(sn(s[1]+dy)),sn(s[2]+dz)];touch(o)});ui()}};
+cv.onpointerup=()=>{const d=drag;drag=null;if(d&&d.k=='h'&&d.mv&&d.lx!==undefined&&sel.length==1)HL={o:sel[0],H:d.h,x:d.lx,y:d.ly};if(d&&d.k=='box'){if(d.mv)boxSel([Math.min(d.x0,d.x1),Math.min(d.y0,d.y1),Math.max(d.x0,d.x1),Math.max(d.y0,d.y1)],d.add);else if(!d.add){sel=[];ui()}}};
+
+cv.onpointercancel=cv.onlostpointercapture=()=>{drag=null};addEventListener('blur',()=>{drag=null});
+const inR=(p,r)=>p[0]>=r[0]&&p[0]<=r[2]&&p[1]>=r[1]&&p[1]<=r[3];
+function segR(a,b,r){let t0=0,t1=1;const d=[b[0]-a[0],b[1]-a[1]];
+for(const[p,q]of[[-d[0],a[0]-r[0]],[d[0],r[2]-a[0]],[-d[1],a[1]-r[1]],[d[1],r[3]-a[1]]]){if(p==0){if(q<0)return false}else{const t=q/p;if(p<0){if(t>t1)return false;t0=Math.max(t0,t)}else{if(t<t0)return false;t1=Math.min(t1,t)}}}return true}
+const inT=(p,a,b,c)=>{const s=(u,v)=>(u[0]-p[0])*(v[1]-p[1])-(u[1]-p[1])*(v[0]-p[0]),d1=s(a,b),d2=s(b,c),d3=s(c,a);return!((d1<0||d2<0||d3<0)&&(d1>0||d2>0||d3>0))};
+function boxSel(r,add){const M=mats(cam(),innerWidth/innerHeight),W=innerWidth,H=innerHeight,
+P=(f,i)=>{const x=f[i],y=f[i+1],z=f[i+2],w=M[3]*x+M[7]*y+M[11]*z+M[15];return[((M[0]*x+M[4]*y+M[8]*z+M[12])/w*.5+.5)*W,(1-((M[1]*x+M[5]*y+M[9]*z+M[13])/w*.5+.5))*H,w]},
+cs=[[r[0],r[1]],[r[2],r[1]],[r[2],r[3]],[r[0],r[3]]],hit=[];
+for(const o of objects){if(o.hid)continue;const f=geo(o).f;let ok=false;
+for(let i=0;i<f.length&&!ok;i+=27){const a=P(f,i),b=P(f,i+9),c=P(f,i+18);if(a[2]<=0||b[2]<=0||c[2]<=0)continue;
+if(inR(a,r)||inR(b,r)||inR(c,r)||segR(a,b,r)||segR(b,c,r)||segR(c,a,r)||cs.some(p=>inT(p,a,b,c)))ok=true}
+if(ok)hit.push(o)}
+sel=add?[...new Set([...sel,...hit])]:hit;ui()}
+function anchor(mx,my){const R=ray(mx,my),h=pick(R);if(h)return h.p;const t=-R.o[2]/R.d[2];
+return[0,1,2].map(i=>R.o[i]+R.d[i]*(t>0&&t<C.d*8?t:C.d))}
+function orbitAbout(P,w,a){const u=sub(C.tg,P),c=Math.cos(a),s=Math.sin(a),x=cross(w,u),k=dot(w,u)*(1-c);C.tg=[0,1,2].map(i=>P[i]+u[i]*c+x[i]*s+w[i]*k)}
+cv.addEventListener('wheel',e=>{e.preventDefault();const wy=Math.max(-400,Math.min(400,(+e.deltaY||0)*(e.deltaMode==1?33:e.deltaMode==2?400:1)));const P=anchor(e.clientX,e.clientY),nd=Math.min(6000,Math.max(5,C.d*Math.exp(wy*.001))),k=nd/C.d;
+C.tg=C.tg.map((v,i)=>P[i]+(v-P[i])*k);C.d=nd},{passive:false});
+
+/* ---------- Handles & Visualizers ---------- */
+const ov=$('#ov'),ox=ov.getContext('2d');
+function proj(p){const M=mats(cam(),innerWidth/innerHeight),w=M[3]*p[0]+M[7]*p[1]+M[11]*p[2]+M[15],
+x=(M[0]*p[0]+M[4]*p[1]+M[8]*p[2]+M[12])/w,y=(M[1]*p[0]+M[5]*p[1]+M[9]*p[2]+M[13])/w;return[(x*.5+.5)*innerWidth,(1-(y*.5+.5))*innerHeight,w]}
+function hnd(o){if(!o)return[];const b=geo(o).bb,cx=(b[0]+b[3])/2,cy=(b[1]+b[4])/2,cm=(b[2]+b[5])/2,c=[o.pos[0],o.pos[1],o.pos[2]+o.size[2]/2],
+H=[{p:[cx,cy,b[5]],lift:1},{p:[b[3],b[1],b[2]],rot:2,c},{p:[cx,b[4],cm],rot:0,c},{p:[b[3],cy,cm],rot:1,c}];
+const R=eR(o.rot),[w,d,h]=o.size,L=(x,y,z)=>[0,1,2].map(i=>c[i]+R[i][0]*x+R[i][1]*y+R[i][2]*z);
+for(const a of[-1,1]){for(const b of[-1,1])H.push({p:L(a*w/2,b*d/2,-h/2),ax:[0,1],s:[a,b]});H.push({p:L(a*w/2,0,-h/2),ax:[0],s:[a]},{p:L(0,a*d/2,-h/2),ax:[1],s:[a]})}
+H.push({p:L(0,0,h/2),ax:[2],s:[1]},{p:L(0,0,-h/2),ax:[2],s:[-1]});return H}
+function hitH(x,y){if(sel.length!=1)return;for(const h of hnd(sel[0])){const q=hpos(h);if(q[2]>0&&Math.hypot(q[0]-x,q[1]-y)<11)return h}}
+function hdrag(e){const o=sel[0],H=drag.h,S=drag.st,R=ray(e.clientX,e.clientY);
+if(H.rot!==undefined){const c=proj(H.c),a=Math.atan2(-(e.clientY-c[1]),e.clientX-c[0]);if(drag.a0===undefined)drag.a0=a;
+let dA=a-drag.a0;dA=Math.atan2(Math.sin(dA),Math.cos(dA));const ax=[0,0,0];ax[H.rot]=1;let t=dA*(dot(ax,cam().f)<0?1:-1);
+if(!e.altKey)t=Math.round(t/(Math.PI/12))*(Math.PI/12);if(!drag.mv){snap();drag.mv=1}
+o.rot=rE(m3(rm(H.rot,t),eR(S.rot)));touch(o);const g=geo(o);if(g.bb[2]<0&&S.pos[2]>=0){o.pos[2]-=g.bb[2];touch(o)}ui();return}
+if(H.lift){const a=cam(),n=norm([a.f[0],a.f[1],0]),t=dot(sub(H.p,R.o),n)/dot(R.d,n);if(!(t>0))return;const z=R.o[2]+R.d[2]*t;
+if(drag.z0===undefined)drag.z0=z;if(!drag.mv){snap();drag.mv=1}o.pos=[S.pos[0],S.pos[1],sn(S.pos[2]+z-drag.z0)];touch(o);ui();return}
+/* resize in the shape's own (rotated) axes: handle axes ax are local indices, s the side (+1/-1); the opposite side stays fixed */
+const R0=eR(S.rot),c0=[S.pos[0],S.pos[1],S.pos[2]+S.size[2]/2],U=i=>[R0[0][i],R0[1][i],R0[2][i]],ac=cam();
+let n;if(H.ax.length==1){const u=U(H.ax[0]);n=sub(ac.f,u.map(v=>v*dot(ac.f,u)));if(Math.hypot(...n)<1e-3)n=ac.f;n=norm(n)}else n=U(3-H.ax[0]-H.ax[1]);
+const dn=dot(R.d,n);if(Math.abs(dn)<1e-6)return;const t=dot(sub(H.p,R.o),n)/dn;if(!(t>0))return;
+const dm=sub([0,1,2].map(i=>R.o[i]+R.d[i]*t),c0),ns=[...S.size],dl=[0,0,0];
+H.ax.forEach((i,j)=>{const s=H.s[j],u=U(i),anc=-s*S.size[i]/2,k=[0,1,2].find(q=>Math.abs(u[q])>.9999);let v=dot(dm,u);
+if(k!==undefined){v=(sn(c0[k]+u[k]*v)-c0[k])*u[k];ns[i]=Math.max(.1,s*(v-anc))}else ns[i]=Math.max(.1,sn(s*(v-anc)))});
+if(e.ctrlKey){let r=H.ax.reduce((a,i)=>a+ns[i]/S.size[i],0)/H.ax.length;r=Math.max(r,.1/Math.min(...S.size));for(let i=0;i<3;i++)ns[i]=S.size[i]*r}
+for(let i=0;i<3;i++){const j=H.ax.indexOf(i);dl[i]=j>=0?H.s[j]*(ns[i]-S.size[i])/2:(i==2?(ns[2]-S.size[2])/2:0)}
+const cc=[0,1,2].map(i=>c0[i]+R0[i][0]*dl[0]+R0[i][1]*dl[1]+R0[i][2]*dl[2]),r4=v=>+v.toFixed(4);
+if(!drag.mv){snap();drag.mv=1}
+o.size=ns.map(r4);o.pos=[r4(cl(cc[0])),r4(cl(cc[1])),r4(cc[2]-ns[2]/2)];touch(o);ui()}
+const rm=(i,t)=>{const c=Math.cos(t),s=Math.sin(t);return[[[1,0,0],[0,c,-s],[0,s,c]],[[c,0,s],[0,1,0],[-s,0,c]],[[c,-s,0],[s,c,0],[0,0,1]]][i]},
+m3=(A,B)=>A.map(r=>[0,1,2].map(j=>r[0]*B[0][j]+r[1]*B[1][j]+r[2]*B[2][j])),
+eR=r=>{const[a,b,c]=r.map(d=>d*Math.PI/180);return m3(rm(2,c),m3(rm(1,b),rm(0,a)))},
+rE=R=>{const b=Math.asin(Math.max(-1,Math.min(1,-R[2][0]))),g=Math.cos(b)>1e-6;
+return(g?[Math.atan2(R[2][1],R[2][2]),b,Math.atan2(R[1][0],R[0][0])]:[0,b,Math.atan2(-R[0][1],R[1][1])]).map(x=>+(x*180/Math.PI).toFixed(4))};
+function hpos(h){const q=proj(h.p);if(h.lift)q[1]-=30;
+if(h.rot!==undefined){const c=proj(h.c),d=[q[0]-c[0],q[1]-c[1]],l=Math.hypot(...d)||1;q[0]+=d[0]/l*26;q[1]+=d[1]/l*26}return q}
+function arrow(a,z,col){ox.strokeStyle=col;ox.fillStyle=col;ox.lineWidth=2;ox.beginPath();ox.moveTo(a[0],a[1]);ox.lineTo(z[0],z[1]);ox.stroke();
+const t=Math.atan2(z[1]-a[1],z[0]-a[0]);ox.beginPath();ox.moveTo(z[0],z[1]);ox.lineTo(z[0]-11*Math.cos(t-.4),z[1]-11*Math.sin(t-.4));ox.lineTo(z[0]-11*Math.cos(t+.4),z[1]-11*Math.sin(t+.4));ox.fill()}
+function mvArrows(){const o=sel[0],b=geo(o).bb,s=drag.k=='h'?drag.st.pos:drag.st[0],d=[0,1,2].map(i=>o.pos[i]-s[i]);
+let p=[0,1,2].map(i=>(b[i]+b[i+3])/2-d[i]);
+['#e53935','#43a047','#1e88e5'].forEach((col,i)=>{if(Math.abs(d[i])<.01)return;const q=[...p];q[i]+=d[i];const a=proj(p),z=proj(q);
+if(a[2]>0&&z[2]>0){arrow(a,z,col);ox.fillStyle=col;ox.font='bold 13px system-ui';ox.fillText((d[i]>0?'+':'-')+Math.abs(d[i]).toFixed(1)+' mm',(a[0]+z[0])/2+6,(a[1]+z[1])/2-6)}p=q})}
+function aln(ax,m){snap();const B=sel.map(o=>geo(o).bb),Rb=alMode&&alRef&&sel.includes(alRef)?geo(alRef).bb:null,lo=Rb?Rb[ax]:Math.min(...B.map(b=>b[ax])),hi=Rb?Rb[ax+3]:Math.max(...B.map(b=>b[ax+3])),T=m==0?lo:m==1?(lo+hi)/2:hi;
+sel.forEach((o,i)=>{const b=B[i],cur=m==0?b[ax]:m==1?(b[ax]+b[ax+3])/2:b[ax+3];o.pos[ax]+=T-cur;touch(o)});ui()}
+const al=$('#al');[['X',['Left','Center','Right']],['Y',['Front','Center','Back']],['Z',['Bottom','Middle','Top']]].forEach(([l,n],ax)=>{
+al.append(Object.assign(document.createElement('b'),{textContent:l}));n.forEach((t,m)=>btn(al,t,()=>aln(ax,m)))});
+function place(g,k){const s0=g.size0||g.size,p0=g.pos0,ra=g.size.map((v,i)=>v/s0[i]),same=ra.every(r=>Math.abs(r-1)<1e-6),uni=ra.every(r=>Math.abs(r-ra[0])<1e-6),
+gr0=!g.rot.some(r=>r%360),kr0=!k.rot.some(r=>r%360),cg0=[p0[0],p0[1],p0[2]+s0[2]/2],cg=[g.pos[0],g.pos[1],g.pos[2]+g.size[2]/2],
+d=[k.pos[0],k.pos[1],k.pos[2]+k.size[2]/2].map((v,i)=>v-cg0[i]);
+if(same){const R=eR(g.rot),c=[0,1,2].map(i=>cg[i]+R[i][0]*d[0]+R[i][1]*d[1]+R[i][2]*d[2]);k.pos=[c[0],c[1],c[2]-k.size[2]/2];if(!gr0)k.rot=rE(m3(R,eR(k.rot)));return k}
+if(gr0&&(uni||kr0)){const c=cg.map((v,i)=>v+d[i]*ra[i]);k.size=k.size.map((v,i)=>v*ra[i]);k.pos=[c[0],c[1],c[2]-k.size[2]/2];touch(k);return k}
+const Q=bake(k),P=Q.map(p=>p.v.map(v=>[0,1,2].map(i=>(v[i]-p0[i])/s0[i]))),T={size:g.size,rot:g.rot,pos:g.pos,base:P,cols:Q.map(p=>p.c)};
+return fromPolys(bake(T),{hole:k.hole,col:k.col})}
+$('#ho').previousElementSibling.insertAdjacentHTML('beforebegin','<label>Radius (mm)</label><input id=rd disabled><label>Sides</label><input id=ns disabled><label>Wall (mm)</label><input id=wl disabled>');
+$('#rd').onchange=()=>{const o=sel.length==1?sel[0]:null;if(!o||!RAD[o.type])return;const v=calc($('#rd').value,o.rad||0);if(!isFinite(v)){warn('Invalid radius value');setTimeout(ui,1200);return}snap();o.rad=Math.max(0,Math.min(rmax(o),v));touch(o);ui()};
+
+/* ---------- Extrusions, Text, and SVGs ---------- */
+const NEEDS={box:o=>o.rad>0,cylinder:o=>o.rad>0,cone:o=>o.rad>0,wedge:o=>o.rad>0,roof:o=>o.rad>0,prism:()=>1,tube:()=>1,ring:()=>1,slot:()=>1,gear:()=>1,screw:()=>1,hook:()=>1};
+function hemi(){const S=36,K=10,V=[[0,0,1],[0,0,0]],F=[],ix=(j,i)=>2+(j-1)*S+i%S;
+for(let j=1;j<=K;j++){const f=Math.PI/2*j/K;for(let i=0;i<S;i++){const u=2*Math.PI*i/S;V.push([.5*Math.sin(f)*Math.cos(u),.5*Math.sin(f)*Math.sin(u),Math.cos(f)])}}
+for(let i=0;i<S;i++){F.push([0,ix(1,i),ix(1,i+1)],[1,ix(K,i+1),ix(K,i)]);for(let j=1;j<K;j++)F.push([ix(j,i),ix(j,i+1),ix(j+1,i+1),ix(j+1,i)])}return solid(V,F)}
+function rev(P,N,ys){const A=P.reduce((s,p,i)=>{const q=P[(i+1)%P.length];return s+p[0]*q[1]-q[0]*p[1]},0)>0,
+R=P.map(([r,z])=>r<1e-9?[[0,0,z]]:Array.from({length:N},(_,s)=>{const g=2*Math.PI*s/N;return[r*Math.cos(g),r*Math.sin(g)*ys,z]})),o=[];
+for(let i=0;i<P.length;i++){const a=R[i],b=R[(i+1)%P.length];for(let s=0;s<N;s++){const s1=(s+1)%N,A0=a[a.length>1?s:0],A1=a[a.length>1?s1:0],B0=b[b.length>1?s:0],B1=b[b.length>1?s1:0],
+q=A?[A0,A1,B1,B0]:[A0,B0,B1,A1];o.push(q.filter((v,k)=>v!==q[(k+1)%4]))}}return o.filter(q=>q.length>2)}
+function earclip(P){const I=P.map((_,i)=>i),T=[];let g=0;
+while(I.length>3&&g++<1e5){let ok=false;for(let k=0;k<I.length;k++){const a=I[(k+I.length-1)%I.length],b=I[k],c=I[(k+1)%I.length],A=P[a],B=P[b],C=P[c];
+if((B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0])<=1e-12)continue;if(I.some(j=>j!=a&&j!=b&&j!=c&&inT(P[j],A,B,C)))continue;T.push([a,b,c]);I.splice(k,1);ok=true;break}
+if(!ok)break}if(I.length==3)T.push([...I]);return T}
+function ext(p,z0,z1){const o=[];for(const[a,b,c]of earclip(p))o.push(new Poly([[...p[a],z1],[...p[b],z1],[...p[c],z1]]),new Poly([[...p[a],z0],[...p[c],z0],[...p[b],z0]]));
+for(let i=0;i<p.length;i++){const j=(i+1)%p.length;o.push(new Poly([[...p[i],z0],[...p[j],z0],[...p[j],z1],[...p[i],z1]]))}return o.filter(q=>q.ok)}
+const pip=(p,P)=>{let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++)if((P[i][1]>p[1])!=(P[j][1]>p[1])&&p[0]<(P[j][0]-P[i][0])*(p[1]-P[i][1])/(P[j][1]-P[i][1])+P[i][0])c=!c;return c};
+function rbParam(o){const[w,d,h]=o.size,t=o.type;let P;
+if(t=='gear'){const n=Math.max(3,Math.min(100,o.n|0||16)),R=w/2,dep=Math.min(Math.max(o.wall||3,.2),R*.6),rf=1-dep/R,a=2*Math.PI/n,p=[];
+for(let i=0;i<n;i++)for(const[k,r]of[[-.26,rf],[-.12,1],[.12,1],[.26,rf],[.5,rf]]){const th=(i+k)*a;p.push([Math.cos(th)*r*w/2,Math.sin(th)*r*d/2])}
+P=ext(p,0,h).map(q=>q.v)}
+else if(t=='screw'){const pit=Math.max(o.wall||1.5,.3),dep=Math.min(pit*.6,w/2*.4)/(w/2),N=36,rows=Math.min(600,Math.max(2,Math.ceil(h/pit*14))),V=[];
+for(let j=0;j<=rows;j++){const z=h*j/rows;for(let i=0;i<N;i++){const th=2*Math.PI*i/N;let ph=th/(2*Math.PI)-z/pit;ph-=Math.floor(ph);const tr=1-2*Math.abs(ph-.5),f=Math.min(1,Math.max(0,(tr-.15)/.5)),r=1-dep*(1-f);V.push([Math.cos(th)*r*w/2,Math.sin(th)*r*d/2,z])}}
+P=[];for(let j=0;j<rows;j++)for(let i=0;i<N;i++){const a=j*N+i,b=j*N+(i+1)%N,c=a+N,e=b+N;P.push([V[a],V[b],V[e]],[V[a],V[e],V[c]])}
+for(let i=0;i<N;i++){const i2=(i+1)%N;P.push([[0,0,0],V[i2],V[i]],[[0,0,h],V[N*rows+i],V[N*rows+i2]])}}
+else{const Ro=w/2,tt=Math.min(Math.max(o.wall||4,.5),Ro*.9),Ri=Ro-tt,dd=Math.max(d,Ro+1),p=[[0,dd]],S=24,sw=Math.PI*1.17;
+for(let k=0;k<=S;k++){const a=Math.PI+sw*k/S;p.push([Ro+Ro*Math.cos(a),Ro+Ro*Math.sin(a)])}
+for(let k=S;k>=0;k--){const a=Math.PI+sw*k/S;p.push([Ro+Ri*Math.cos(a),Ro+Ri*Math.sin(a)])}
+p.push([tt,dd]);P=ext(p.map(q=>[q[0]-w/2,q[1]-dd/2]),0,h).map(q=>q.v)}
+return P.map(p=>p.map(v=>[v[0]/w,v[1]/d,v[2]/h]))}
+function rb2(o){const[w,d,h]=o.size,t=o.type;let P;if(t=='gear'||t=='screw'||t=='hook')return rbParam(o);
+if(t=='prism'){const pts=ng(o.n||6),xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+return prism(pts.map(p=>[(p[0]-(x0+x1)/2)/(x1-x0),(p[1]-(y0+y1)/2)/(y1-y0)]))}
+if(t=='slot'){const r=Math.min(d/2,w/2),c=Math.max(w/2-r,0),p=[];for(let k=0;k<=24;k++){const a=-Math.PI/2+Math.PI*k/24;p.push([c+r*Math.cos(a),r*Math.sin(a)])}
+for(let k=0;k<=24;k++){const a=Math.PI/2+Math.PI*k/24;p.push([-c+r*Math.cos(a),r*Math.sin(a)])}P=ext(p,0,h).map(q=>q.v)}
+else{const R=w/2,Ri=Math.max(R-(o.wall||3),R*.05);P=rev([[Ri,0],[R,0],[R,h],[Ri,h]],96,d/w)}
+return P.map(p=>p.map(v=>[v[0]/w,v[1]/d,v[2]/h]))}
+function trace(g,W,H){const adj=new Map(),gv=(x,y)=>x<0||y<0||x>=W||y>=H?0:g[y*W+x],add=(a,b)=>{for(const[u,v]of[[a,b],[b,a]]){if(!adj.has(u))adj.set(u,[]);adj.get(u).push(v)}};
+for(let y=-1;y<H;y++)for(let x=-1;x<W;x++){const a=gv(x,y),b=gv(x+1,y),c=gv(x+1,y+1),d=gv(x,y+1);if(a==b&&b==c&&c==d)continue;const k=[];
+if(a!=b)k.push((2*x+1)+','+2*y);if(b!=c)k.push((2*x+2)+','+(2*y+1));if(c!=d)k.push((2*x+1)+','+(2*y+2));if(d!=a)k.push(2*x+','+(2*y+1));
+if(k.length==2)add(k[0],k[1]);else if(k.length==4){add(k[0],k[1]);add(k[2],k[3])}}
+const seen=new Set(),L=[];for(const s of adj.keys()){if(seen.has(s))continue;const l=[];let prev=null,cur=s;
+do{seen.add(cur);l.push(cur.split(',').map(v=>v/2));const nb=adj.get(cur),nx=nb[0]!==prev?nb[0]:nb[1];prev=cur;cur=nx}while(cur!==s&&!seen.has(cur));L.push(l)}return L}
+function rdq(p,e){if(p.length<3)return p;const a=p[0],b=p[p.length-1],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;let m=0,k=0;
+for(let i=1;i<p.length-1;i++){const d=Math.abs(dy*(p[i][0]-a[0])-dx*(p[i][1]-a[1]))/L;if(d>m){m=d;k=i}}
+if(m<=e)return[a,b];return rdq(p.slice(0,k+1),e).slice(0,-1).concat(rdq(p.slice(k),e))}
+function rdp(p,e){let m=0,k=0;p.forEach((q,i)=>{const d=Math.hypot(q[0]-p[0][0],q[1]-p[0][1]);if(d>m){m=d;k=i}});
+return rdq(p.slice(0,k+1),e).slice(0,-1).concat(rdq(p.slice(k).concat([p[0]]),e).slice(0,-1))}
+function contoursToPolys(cs,h){const ar=p=>{let a=0;for(let i=0;i<p.length;i++){const q=p[(i+1)%p.length];a+=p[i][0]*q[1]-q[0]*p[i][1]}return a},
+C=cs.filter(p=>p.length>2).map(p=>ar(p)<0?p.slice().reverse():p),dep=C.map((p,i)=>C.filter((q,j)=>j!=i&&pip(p[0],q)).length),out=[];
+C.forEach((p,i)=>{if(dep[i]%2)return;const hs=C.filter((q,j)=>dep[j]==dep[i]+1&&pip(q[0],p));let P=ext(p,0,h);
+if(hs.length)P=csgS(P,hs.map(q=>ext(q,-1,h+1)).reduce(csgU));out.push(...P)});return out}
+function txtContours(t,sz){const F=160,c=document.createElement('canvas'),x=c.getContext('2d');x.font='bold '+F+'px sans-serif';
+const w=Math.ceil(x.measureText(t).width)+40,H=Math.ceil(F*1.5);c.width=w;c.height=H;x.font='bold '+F+'px sans-serif';x.fillStyle='#000';x.fillText(t,20,F*1.1);
+const D=x.getImageData(0,0,w,H).data,g=new Uint8Array(w*H);for(let i=0;i<w*H;i++)g[i]=D[i*4+3]>127?1:0;
+const k=sz/(F*.72);return trace(g,w,H).map(l=>rdp(l,.8).map(p=>[p[0]*k,-p[1]*k]))}
+function subs(d){const T=d.match(/[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[],N={M:2,L:2,H:1,V:1,C:6,S:4,Q:4,T:2,A:7},out=[];
+let i=0,cx=0,cy=0,sx=0,sy=0,cmd='',cur=null;
+while(i<T.length){if(/[a-zA-Z]/.test(T[i]))cmd=T[i++];const C=cmd.toUpperCase(),rel=cmd!=C;
+if(C=='Z'){if(cur)cur.push('Z');cx=sx;cy=sy;if(i<T.length&&!/[a-zA-Z]/.test(T[i]))i++;continue}
+if(!N[C]){i++;continue}const a=T.slice(i,i+N[C]).map(Number);i+=N[C];let ex=a[a.length-2],ey=a[a.length-1];
+if(C=='H'){ex=a[0];ey=rel?0:cy}else if(C=='V'){ey=a[0];ex=rel?0:cx}if(rel){ex+=cx;ey+=cy}
+if(C=='M'){if(cur)out.push(cur.join(' '));cur=['M'+ex+' '+ey];sx=ex;sy=ey;cmd=rel?'l':'L'}else{cur=cur||['M'+cx+' '+cy];cur.push(cmd+a.join(' '))}
+cx=ex;cy=ey}
+if(cur)out.push(cur.join(' '));return out}
+function cleanSvg(r){r.querySelectorAll('script,foreignObject,iframe,object,embed,image,audio,video,style,link,animate,set,animateTransform,animateMotion').forEach(e=>e.remove());
+for(const e of[r,...r.querySelectorAll('*')])for(const a of[...e.attributes])if(/^on/i.test(a.name)||(/(^|:)href$/i.test(a.name)&&/^\s*(javascript|data|vbscript):/i.test(a.value)))e.removeAttribute(a.name)}
+function svgImp(t){const sv=new DOMParser().parseFromString(t,'image/svg+xml').documentElement;if(sv.nodeName!='svg')return alert('Not an SVG file');
+const h=+prompt('Extrude height (mm)','5');if(!(h>0))return;const wd=+prompt('Scale drawing width in mm (0 = keep)','0')||0;
+const host=document.createElement('div');host.style.cssText='position:absolute;visibility:hidden;width:0;height:0;overflow:hidden';document.body.append(host);
+cleanSvg(sv);const s2=document.importNode(sv,true);host.append(s2);const cs=[];try{
+const els=[...s2.querySelectorAll('path,rect,circle,ellipse,polygon,polyline')];if(els.length>1500)return alert('SVG is too complex');
+for(const el of els){const m=el.getCTM()||{a:1,b:0,c:0,d:1,e:0,f:0},ds=el.tagName=='path'?subs(el.getAttribute('d')||''):[null];
+for(const d of ds){let e=el;if(d){e=document.createElementNS('http://www.w3.org/2000/svg','path');e.setAttribute('d',d);s2.append(e)}
+const L=e.getTotalLength(),n=Math.max(12,Math.min(600,Math.ceil(L/2))),p=[];for(let i=0;i<n;i++){const q=e.getPointAtLength(L*i/n);p.push([m.a*q.x+m.c*q.y+m.e,-(m.b*q.x+m.d*q.y+m.f)])}cs.push(p)}}
+}finally{host.remove()}if(!cs.length)return alert('No shapes found in SVG');if(cs.length>600||cs.reduce((a,p)=>a+p.length,0)>4e4)return alert('SVG is too complex');let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+cs.forEach(p=>p.forEach(q=>{x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1])}));
+const k=wd>0?wd/(x1-x0):1,cx=(x0+x1)/2,cy=(y0+y1)/2,P=contoursToPolys(cs.map(p=>p.map(q=>[(q[0]-cx)*k,(q[1]-cy)*k])),h);
+if(!P.length)return alert('Could not build shape from SVG');snap();const o=fromPolys(P,{col:'#7e57c2'});objects.push(o);sel=[o];ui()}
+function skMake(){const m=$('#skm').value,h=calc($('#skh').value,0);if(m!='Revolve'&&!(h>0))return alert('Height must be > 0');let P;
+if(m=='Text'){const c=txtContours($('#skt').value.slice(0,80),Math.max(.5,Math.min(2e3,calc($('#sks').value,0)||10)));if(!c.length)return alert('No text');P=contoursToPolys(c,h)}
+else{const n=($('#skp').value.match(/-?\d*\.?\d+/g)||[]).map(Number),pts=[];for(let i=0;i+1<n.length;i+=2)pts.push([n[i],n[i+1]]);if(pts.length<3)return alert('Need at least 3 points');if(pts.length>2000)return alert('Too many points (max 2000)');
+if(m=='Extrude')P=contoursToPolys([pts],h);else{if(pts.some(p=>p[0]<0))return alert('Revolve radius cannot be negative');P=rev(pts,96,1).map(v=>new Poly(v)).filter(p=>p.ok)}}
+if(!P.length)return alert('Could not build shape');snap();const o=fromPolys(P,{col:'#7e57c2'});objects.push(o);sel=[o];ui()}
+function arr(){const g=id=>calc($(id).value,0),n=Math.round(g('#an')),m=$('#am').value;if(!(n>=2)||!sel.length)return;if(n>200||n*sel.length+objects.length>3000)return warn('Array too large');
+const d=[g('#ax'),g('#ay'),g('#az')],cx=g('#acx'),cy=g('#acy'),ang=g('#aa'),out=[];if(![...d,cx,cy,ang].every(isFinite))return warn('Invalid number in this field');snap();
+for(let i=1;i<n;i++)for(const o of sel){const c=cp(o);
+if(m=='Linear')c.pos=[cl(o.pos[0]+d[0]*i),cl(o.pos[1]+d[1]*i),o.pos[2]+d[2]*i];
+else{const t=(ang%360==0?ang/n:ang/(n-1))*i*Math.PI/180,x=o.pos[0]-cx,y=o.pos[1]-cy;c.pos=[cl(cx+x*Math.cos(t)-y*Math.sin(t)),cl(cy+x*Math.sin(t)+y*Math.cos(t)),o.pos[2]];c.rot=rE(m3(rm(2,t),eR(o.rot)))}
+out.push(c)}objects.push(...out);sel=[...sel,...out];ui()}
+function hide(){if(!sel.length)return;snap();sel.forEach(o=>o.hid=true);sel=[];ui()}
+function unhide(){if(!objects.some(o=>o.hid))return;snap();objects.forEach(o=>{delete o.hid});ui()}
+function nudge(e){const a=cam(),st=SNv()*(e.shiftKey?10:1),ax=v=>Math.abs(v[0])>Math.abs(v[1])?[0,Math.sign(v[0])]:[1,Math.sign(v[1])],d=[0,0,0];
+if(e.key=='ArrowRight'){const q=ax(a.r);d[q[0]]=q[1]*st}else if(e.key=='ArrowLeft'){const q=ax(a.r);d[q[0]]=-q[1]*st}
+else if(e.key=='ArrowUp'){const q=ax(a.f);d[q[0]]=q[1]*st}else if(e.key=='ArrowDown'){const q=ax(a.f);d[q[0]]=-q[1]*st}else if(e.key=='PageUp')d[2]=st;else if(e.key=='PageDown')d[2]=-st;else return;
+snap();sel.forEach(o=>{o.pos=[cl(+(o.pos[0]+d[0]).toFixed(4)),cl(+(o.pos[1]+d[1]).toFixed(4)),+(o.pos[2]+d[2]).toFixed(4)];touch(o)});ui()}
+function mpt(x,y){const R=ray(x,y),h=pick(R);let p=null;
+if(h){p=h.p;let bd=14;for(const k of[0,9,18]){const v=[h.f[h.i+k],h.f[h.i+k+1],h.f[h.i+k+2]],q=proj(v),dd=Math.hypot(q[0]-x,q[1]-y);if(dd<bd){bd=dd;p=v}}}
+else{const t=-R.o[2]/R.d[2];if(t>0)p=[sn(R.o[0]+R.d[0]*t),sn(R.o[1]+R.d[1]*t),0]}return p}
+function mTog(){msr=!msr;mp=[];if(msr)alMode=false;ui()}
+function vw(p,t){C.p=p;C.t=t;ORT=true}
+function pnl(id){for(const k of['#ar','#sk','#rf'])$(k).style.display=k==id&&$(k).style.display!='grid'?'grid':'none'}
+function arTog(){pnl('#ar')}function skTog(){pnl('#sk')}
+function getT(){const r=build((sel.length?sel:objects).filter(o=>!o.hid&&!o.slice));if(!r||r.hole||!r.P.length){alert('Nothing to export');return}
+const T=[];for(const p of r.P)for(let i=1;i<p.v.length-1;i++)T.push([p.v[0],p.v[i],p.v[i+1]]);return T}
+function expObj(){const T=getT();if(!T)return;const idx=new Map(),V=[],id=v=>{const k=v.map(x=>x.toFixed(4)).join(' ');if(!idx.has(k)){idx.set(k,V.length+1);V.push(k)}return idx.get(k)},
+F=T.map(t=>'f '+t.map(id).join(' '));dl(new Blob(['# Plate export (mm, Z up)\n'+V.map(v=>'v '+v).join('\n')+'\n'+F.join('\n')+'\n']),'model.obj')}
+const crcT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})(),crc=b=>{let c=-1;for(const x of b)c=crcT[(c^x)&255]^(c>>>8);return(c^-1)>>>0};
+function zip(files){const E=new TextEncoder(),L=[],C2=[];let off=0;
+for(const[n,s]of files){const nb=E.encode(n),d=E.encode(s),c=crc(d),h=new DataView(new ArrayBuffer(30)),g=new DataView(new ArrayBuffer(46));
+h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(12,33,true);h.setUint32(14,c,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nb.length,true);
+g.setUint32(0,0x02014b50,true);g.setUint16(4,20,true);g.setUint16(6,20,true);g.setUint16(14,33,true);g.setUint32(16,c,true);g.setUint32(20,d.length,true);g.setUint32(24,d.length,true);g.setUint16(28,nb.length,true);g.setUint32(42,off,true);
+L.push(new Uint8Array(h.buffer),nb,d);C2.push(new Uint8Array(g.buffer),nb);off+=30+nb.length+d.length}
+const cs=C2.reduce((a,b)=>a+b.length,0),e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
+return new Blob([...L,...C2,new Uint8Array(e.buffer)],{type:'model/3mf'})}
+function exp3mf(){const T=getT();if(!T)return;const idx=new Map(),V=[],tr=T.map(t=>t.map(v=>{const k=v.map(x=>x.toFixed(4)).join(' ');if(!idx.has(k)){idx.set(k,V.length);V.push(k)}return idx.get(k)}));
+const xml='<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>'+
+V.map(k=>{const[a,b,c]=k.split(' ');return`<vertex x="${a}" y="${b}" z="${c}"/>`}).join('')+'</vertices><triangles>'+tr.map(t=>`<triangle v1="${t[0]}" v2="${t[1]}" v3="${t[2]}"/>`).join('')+'</triangles></mesh></object></resources><build><item objectid="1"/></build></model>',
+CT='<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>',
+RL='<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>';
+dl(zip([['[Content_Types].xml',CT],['_rels/.rels',RL],['3D/3dmodel.model',xml]]),'model.3mf')}
+
+document.body.insertAdjacentHTML('beforeend','<div class=p id=ar><h6>Array (copies of the selection)</h6><label>Mode</label><select id=am><option value=Linear>Linear<option value=Circular>Circular</select><label>Total count</label><input id=an value=4><label>Step X (mm)</label><input id=ax value=20><label>Step Y (mm)</label><input id=ay value=0><label>Step Z (mm)</label><input id=az value=0><label>Center X (circular)</label><input id=acx value=0><label>Center Y (circular)</label><input id=acy value=0><label>Angle, deg (circular)</label><input id=aa value=360></div><div class=p id=sk><h6>Sketch / Text</h6><label>Mode</label><select id=skm><option value=Extrude>Extrude<option value=Revolve>Revolve<option value=Text>Text</select><textarea id=skp rows=6 style="grid-column:1/3">0,0\n40,0\n40,20\n20,20\n20,40\n0,40</textarea><label>Text</label><input id=skt value=Hello><label>Letter size (mm)</label><input id=sks value=10><label>Height (mm)</label><input id=skh value=5></div>');
+btn($('#ar'),'Apply',arr);btn($('#ar'),'Close',arTog);btn($('#sk'),'Create',skMake);btn($('#sk'),'Close',skTog);
+$('#ns').onchange=()=>{const o=sel.length==1?sel[0]:null;if(!o||(o.type!='prism'&&o.type!='gear'))return;const v=Math.round(calc($('#ns').value,o.n));if(!(v>=3&&v<=(o.type=='gear'?100:64))){ui();return}snap();o.n=v;
+const pts=ng(v),xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);o.size[1]=o.size[0]*(Math.max(...ys)-Math.min(...ys))/(Math.max(...xs)-Math.min(...xs));touch(o);ui()};
+$('#wl').onchange=()=>{const o=sel.length==1?sel[0]:null;if(!o||!['tube','ring','gear','screw','hook'].includes(o.type))return;const v=calc($('#wl').value,o.wall);if(!(v>0)){ui();return}snap();o.wall=Math.min(v,o.size[0]/2*.95);touch(o);ui()};
+function alTog(){if(alMode){alMode=false;alRef=null}else if(sel.length>1)alMode=true;ui()}
+al.insertAdjacentHTML('afterbegin','<div id=alt style="grid-column:1/5;max-width:230px"></div>');
+btn(al,'Done',alTog);al.lastChild.style.gridColumn='1/5';
+
+/* ---------- intersect, typed values, reference image, trace ---------- */
+let HL=null,RIMG=null,rfm='',rfp=[],trp=[],HV=[0,0];
+Object.assign(DICT,{'Intersect':['Interseca','Intersecar'],'Reference image':['Immagine di riferimento','Imagen de referencia']});
+function csgI(A,B){if(A.length+B.length>CSG_MAX){warn('Shapes too complex to intersect safely');return null}
+try{const a=new Node(cl_(A)),b=new Node(cl_(B));a.invert();b.clipTo(a);b.invert();a.clipTo(b);b.clipTo(a);a.build(b.all());a.invert();return a.all()}catch(e){console.warn('CSG intersect failed',e);warn('Intersect failed');return null}}
+function inter(){const L=sel.filter(o=>!o.slice);if(L.length<2)return warn('Select two or more shapes to intersect');
+let P=bake(L[0]);for(let i=1;i<L.length&&P&&P.length;i++)P=csgI(P,bake(L[i]));
+if(!P||!P.length)return warn('The selected shapes do not overlap: nothing to keep');
+snap();const f=L.find(o=>!o.hole)||L[0],g=fromPolys(P,{hole:L.every(o=>o.hole),col:f.col,kids:L.map(cp)});g.pos0=[...g.pos];g.size0=[...g.size];
+const i=objects.indexOf(L[0]);L.forEach(touch);objects=objects.filter(o=>!L.includes(o));objects.splice(Math.max(0,i),0,g);sel=[g];ui()}
+/* typed value at a handle */
+const dvb=document.createElement('div');dvb.id='dv';dvb.innerHTML='<div id=dvc></div><input id=dvi autocomplete=off>';document.body.append(dvb);
+const dvi=$('#dvi'),dvc=$('#dvc');
+function dvCur(){if(sel.length!=1)return null;if(drag&&drag.k=='h'&&drag.mv&&drag.so===sel[0]&&drag.lx!==undefined)return{H:drag.h,x:drag.lx,y:drag.ly};
+if(HL&&HL.o===sel[0])return HL;return null}
+function dvUpd(){const c=dvCur();if(!c){dvb.style.display='none';return}const o=sel[0],H=c.H,f=v=>+v.toFixed(2),N=['Width','Depth','Height'];let cap,txt;
+if(H.rot!==undefined){cap=T('Rotation')+' (deg)';txt=''+f(o.rot[H.rot])}
+else if(H.lift){cap=T('Height above plate')+' (mm)';txt=''+f(o.pos[2])}
+else{cap=H.ax.map(i=>T(N[i])).join(' x ')+' (mm)';txt=H.ax.map(i=>f(o.size[i])).join(' x ')}
+dvc.textContent=cap;if(document.activeElement!==dvi)dvi.value=txt;dvb.style.display='block';
+dvb.style.left=Math.max(8,Math.min(innerWidth-dvb.offsetWidth-8,c.x+18))+'px';dvb.style.top=Math.max(8,c.y-56)+'px'}
+function dvApply(txt,ctrl){if(drag&&drag.k=='h'&&drag.mv){HL={o:sel[0],H:drag.h,x:drag.lx,y:drag.ly};drag=null}
+const o=sel[0],H=HL&&HL.H;if(!o||!H||sel.length!=1)return;const P=String(txt).split(/[x;]/).map(s=>s.trim()).filter(s=>s!=='');if(!P.length){ui();return}
+if(H.rot!==undefined){const v=calc(P[0],o.rot[H.rot]);if(!isFinite(v))return warn('Invalid number');snap();o.rot[H.rot]=lim('rot',H.rot,v);touch(o);ui();return}
+if(H.lift){const v=calc(P[0],o.pos[2]);if(!isFinite(v))return warn('Invalid number');snap();o.pos[2]=lim('pos',2,v);touch(o);ui();return}
+const ns=[...o.size];let ok=true;H.ax.forEach((i,j)=>{if(P[j]===undefined)return;const v=calc(P[j],o.size[i]);if(!(v>0)||!isFinite(v)){ok=false;return}ns[i]=Math.max(.1,Math.min(1e5,v))});
+if(!ok)return warn('Invalid number');
+if(ctrl||$('#lk').checked){const i0=H.ax[0],r=ns[i0]/o.size[i0];for(let i=0;i<3;i++)ns[i]=Math.max(.1,Math.min(1e5,o.size[i]*r))}
+const R0=eR(o.rot),c0=[o.pos[0],o.pos[1],o.pos[2]+o.size[2]/2],dl=[0,0,0];
+for(let i=0;i<3;i++){const j=H.ax.indexOf(i);dl[i]=j>=0?H.s[j]*(ns[i]-o.size[i])/2:(i==2?(ns[2]-o.size[2])/2:0)}
+const cc=[0,1,2].map(i=>c0[i]+R0[i][0]*dl[0]+R0[i][1]*dl[1]+R0[i][2]*dl[2]),r4=v=>+v.toFixed(4);
+snap();o.size=ns.map(r4);o.pos=[r4(cl(cc[0])),r4(cl(cc[1])),r4(cc[2]-ns[2]/2)];touch(o);ui()}
+dvi.onkeydown=e=>{e.stopPropagation();if(e.key=='Enter'){e.preventDefault();dvApply(dvi.value,e.ctrlKey);dvi.blur()}else if(e.key=='Escape'){HL=null;dvi.blur()}};
+addEventListener('keydown',e=>{const t=e.target.tagName;
+if(rfm){if(e.key=='Escape'){rfm='';rfp=[];trp=[];e.stopImmediatePropagation();return}
+if(rfm=='tr'&&(e.key=='Enter'||e.key=='Backspace')&&!/INPUT|TEXTAREA/.test(t)){e.preventDefault();e.stopImmediatePropagation();if(e.key=='Enter')trFin();else trp.pop();return}}
+if(/INPUT|SELECT|TEXTAREA/.test(t))return;
+if(dvCur()&&/^[0-9.+\-*\/]$/.test(e.key)&&!e.ctrlKey&&!e.metaKey&&!e.altKey){if(drag&&drag.k=='h'){HL={o:sel[0],H:drag.h,x:drag.lx,y:drag.ly};drag=null}dvi.value='';dvi.focus();return}
+if(e.key=='Escape'&&HL)HL=null},true);
+/* reference image */
+const Pi=prog('attribute vec3 aP;attribute vec2 aN;uniform mat4 uM;varying vec2 vT;void main(){vT=aN;gl_Position=uM*vec4(aP,1.);}',
+'precision mediump float;varying vec2 vT;uniform sampler2D uI;uniform float uA;void main(){vec4 c=texture2D(uI,vT);gl_FragColor=vec4(c.rgb,c.a*uA);}'),
+uMi=gl.getUniformLocation(Pi,'uM'),uAi=gl.getUniformLocation(Pi,'uA'),rfb=gl.createBuffer();
+function rfDraw(M){if(!RIMG||!RIMG.vis||!RIMG.tex)return;try{const W=RIMG.w*RIMG.sc,H=RIMG.h*RIMG.sc,a=RIMG.rot*Math.PI/180,c=Math.cos(a),s=Math.sin(a),
+pt=(u,v)=>{const x=(u-.5)*W,y=(.5-v)*H;return[RIMG.x+x*c-y*s,RIMG.y+x*s+y*c,.05]},q=[pt(0,0),pt(1,0),pt(1,1),pt(0,1)],uv=[[0,0],[1,0],[1,1],[0,1]],v=[];
+for(const i of[0,1,2,0,2,3])v.push(...q[i],...uv[i]);
+gl.useProgram(Pi);gl.uniformMatrix4fv(uMi,false,M);gl.uniform1f(uAi,RIMG.op);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,RIMG.tex);
+gl.bindBuffer(gl.ARRAY_BUFFER,rfb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,20,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,2,gl.FLOAT,false,20,12);gl.disableVertexAttribArray(2);
+gl.depthMask(false);gl.drawArrays(gl.TRIANGLES,0,6);gl.depthMask(true);gl.useProgram(A)}catch(e){gl.depthMask(true);gl.useProgram(A)}}
+function rfLoad(file){const url=URL.createObjectURL(file),im=new Image();
+im.onload=()=>{try{const mx=Math.min(4096,gl.getParameter(gl.MAX_TEXTURE_SIZE)),k=Math.min(1,mx/Math.max(im.width,im.height)),w=Math.max(1,Math.round(im.width*k)),h=Math.max(1,Math.round(im.height*k)),c=document.createElement('canvas');
+c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+[[gl.TEXTURE_MIN_FILTER,gl.LINEAR],[gl.TEXTURE_MAG_FILTER,gl.LINEAR],[gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]].forEach(([a,b])=>gl.texParameteri(gl.TEXTURE_2D,a,b));
+if(RIMG&&RIMG.tex)gl.deleteTexture(RIMG.tex);RIMG={tex:t,w,h,x:0,y:0,sc:100/w,rot:0,op:.7,vis:true};rfSync();warn('Image loaded: now use "Set scale" with two points of known distance',6000)}
+catch(e){warn('Could not use this image')}URL.revokeObjectURL(url)};
+im.onerror=()=>{warn('Could not read this image file');URL.revokeObjectURL(url)};im.src=url}
+document.body.insertAdjacentHTML('beforeend','<div class=p id=rf><h6>Reference image (not saved in the project)</h6><label>Opacity</label><input type=range id=rfo min=5 max=100 value=70><label>Width (mm)</label><input id=rfw><label>X (mm)</label><input id=rfx><label>Y (mm)</label><input id=rfy><label>Rotation (deg)</label><input id=rfr></div>');
+const rfi=document.createElement('input');rfi.type='file';rfi.accept='image/*';rfi.hidden=true;document.body.append(rfi);rfi.onchange=()=>{const f=rfi.files[0];rfi.value='';if(f)rfLoad(f)};
+btn($('#rf'),'Load image...',()=>rfi.click());btn($('#rf'),'Set scale (2 points)',()=>{if(!RIMG)return warn('Load an image first');rfm='cal';rfp=[]});
+btn($('#rf'),'Trace outline',()=>{rfm='tr';trp=[]});btn($('#rf'),'Show / hide',()=>{if(RIMG)RIMG.vis=!RIMG.vis});
+btn($('#rf'),'Remove',()=>{if(RIMG){gl.deleteTexture(RIMG.tex);RIMG=null;rfSync()}});btn($('#rf'),'Close',rfTog);
+function rfTog(){pnl('#rf')}
+function rfSync(){const on=!!RIMG;['#rfw','#rfx','#rfy','#rfr','#rfo'].forEach(i=>$(i).disabled=!on);if(!on){['#rfw','#rfx','#rfy','#rfr'].forEach(i=>$(i).value='');return}
+$('#rfw').value=+(RIMG.w*RIMG.sc).toFixed(3);$('#rfx').value=+RIMG.x.toFixed(3);$('#rfy').value=+RIMG.y.toFixed(3);$('#rfr').value=+RIMG.rot.toFixed(3);$('#rfo').value=Math.round(RIMG.op*100)}
+$('#rfw').onchange=()=>{if(!RIMG)return;const v=calc($('#rfw').value,RIMG.w*RIMG.sc);if(v>.1&&v<1e5)RIMG.sc=v/RIMG.w;rfSync()};
+$('#rfx').onchange=()=>{if(!RIMG)return;const v=calc($('#rfx').value,RIMG.x);if(isFinite(v))RIMG.x=Math.max(-1e4,Math.min(1e4,v));rfSync()};
+$('#rfy').onchange=()=>{if(!RIMG)return;const v=calc($('#rfy').value,RIMG.y);if(isFinite(v))RIMG.y=Math.max(-1e4,Math.min(1e4,v));rfSync()};
+$('#rfr').onchange=()=>{if(!RIMG)return;const v=calc($('#rfr').value,RIMG.rot);if(isFinite(v))RIMG.rot=v;rfSync()};
+$('#rfo').oninput=()=>{if(RIMG)RIMG.op=$('#rfo').value/100};rfSync();
+/* click points on the plate: scale calibration and outline tracing */
+function plp(x,y){const R=ray(x,y),t=-R.o[2]/R.d[2];return t>0&&t<1e6?[R.o[0]+R.d[0]*t,R.o[1]+R.d[1]*t]:null}
+function rfClick(e){const p=plp(e.clientX,e.clientY);if(!p)return;
+if(rfm=='cal'){rfp.push(p);if(rfp.length==2){const d=Math.hypot(rfp[1][0]-rfp[0][0],rfp[1][1]-rfp[0][1]),v=calc(prompt('Real distance between the two points (mm)','100')||'',0);
+if(RIMG&&d>1e-6&&v>0){const k=v/d;RIMG.x=rfp[0][0]+(RIMG.x-rfp[0][0])*k;RIMG.y=rfp[0][1]+(RIMG.y-rfp[0][1])*k;RIMG.sc*=k;rfSync()}rfm='';rfp=[]}return}
+if(rfm=='tr'){if(trp.length>2){const q=proj([trp[0][0],trp[0][1],.05]);if(Math.hypot(q[0]-e.clientX,q[1]-e.clientY)<12){trFin();return}}
+trp.push(e.shiftKey?[sn(p[0]),sn(p[1])]:p)}}
+function trFin(){if(trp.length<3){rfm='';trp=[];return warn('A trace needs at least 3 points')}
+const h=calc(prompt('Extrude height (mm)','5')||'',0);if(!(h>0)){rfm='';trp=[];return}
+const P=contoursToPolys([trp],h);if(!P.length){rfm='';trp=[];return warn('Could not build a shape from these points')}
+snap();const o=fromPolys(P,{col:'#7e57c2'});objects.push(o);sel=[o];rfm='';trp=[];ui()}
+cv.addEventListener('pointermove',e=>{HV=[e.clientX,e.clientY]});
+function rfOv(){cv.style.cursor=rfm?'crosshair':'';if(!rfm)return;ox.font='bold 13px system-ui';ox.fillStyle='#d81b60';
+ox.fillText(rfm=='cal'?T('Set scale: click two points whose real distance you know (Esc cancels)'):T('Trace: click each corner; Enter or click the first point to finish, Backspace removes a point, Shift snaps to grid, Esc cancels'),12,innerHeight-40);
+const L=(rfm=='tr'?trp:rfp).map(p=>proj([p[0],p[1],.05]));ox.strokeStyle='#d81b60';ox.lineWidth=2;
+if(L.length){ox.beginPath();L.forEach((q,i)=>i?ox.lineTo(q[0],q[1]):ox.moveTo(q[0],q[1]));ox.lineTo(HV[0],HV[1]);ox.stroke();
+L.forEach((q,i)=>{ox.fillStyle=i==0&&rfm=='tr'&&L.length>2?'#ff9800':'#d81b60';ox.beginPath();ox.arc(q[0],q[1],i==0?6:4,0,7);ox.fill()})}}
+
+/* ---------- Icons & Render Pipeline ---------- */
+function icon(k){const c=COL[k],L='rgba(255,255,255,.35)',D='rgba(0,0,0,.22)',N='rgba(0,0,0,0)',pg=(p,s)=>`<polygon points="${p}" fill="${c}"/><polygon points="${p}" fill="${s}"/>`,
+S={box:pg('20,5 35,12 20,19 5,12',L)+pg('5,12 20,19 20,36 5,29',N)+pg('35,12 20,19 20,36 35,29',D),
+cylinder:`<ellipse cx="20" cy="30" rx="12" ry="5" fill="${c}"/><rect x="8" y="10" width="24" height="20" fill="${c}"/><rect x="20" y="10" width="12" height="20" fill="${D}"/><ellipse cx="20" cy="10" rx="12" ry="5" fill="${c}"/><ellipse cx="20" cy="10" rx="12" ry="5" fill="${L}"/>`,
+sphere:`<circle cx="20" cy="20" r="15" fill="${c}"/><circle cx="14" cy="14" r="6" fill="${L}"/>`,
+cone:`<ellipse cx="20" cy="31" rx="13" ry="5" fill="${c}"/><polygon points="20,4 33,31 7,31" fill="${c}"/><polygon points="20,4 33,31 20,31" fill="${D}"/>`,
+pyramid:pg('20,4 6,28 22,36',L)+pg('20,4 22,36 35,26',D),
+wedge:pg('5,34 30,34 30,12',N)+pg('5,34 30,12 36,9 11,31',L)+pg('30,34 36,31 36,9 30,12',D),
+roof:pg('4,34 18,12 32,34',N)+pg('18,12 32,34 38,30 24,8',D),
+torus:`<path fill-rule="evenodd" fill="${c}" d="M5 22a15 11 0 1 0 30 0a15 11 0 1 0 -30 0ZM13 22a7 4.5 0 1 0 14 0a7 4.5 0 1 0 -14 0Z"/>`,
+prism:`<polygon points="12,8 28,8 36,20 28,32 12,32 4,20" fill="${c}"/><polygon points="12,8 28,8 36,20 20,20" fill="${L}"/><polygon points="20,20 36,20 28,32 12,32" fill="${D}"/>`,
+tube:`<ellipse cx="20" cy="30" rx="13" ry="5" fill="${c}"/><rect x="7" y="10" width="26" height="20" fill="${c}"/><rect x="20" y="10" width="13" height="20" fill="${D}"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="${c}"/><ellipse cx="20" cy="10" rx="13" ry="5" fill="${L}"/><ellipse cx="20" cy="10" rx="8" ry="3" fill="#455a64"/>`,
+ring:`<ellipse cx="20" cy="25" rx="16" ry="8" fill="${c}"/><rect x="4" y="17" width="32" height="8" fill="${c}"/><ellipse cx="20" cy="17" rx="16" ry="8" fill="${c}"/><ellipse cx="20" cy="17" rx="16" ry="8" fill="${L}"/><ellipse cx="20" cy="17" rx="9" ry="4" fill="#455a64"/>`,
+hemi:`<path d="M4 28a16 16 0 0 1 32 0z" fill="${c}"/><ellipse cx="20" cy="28" rx="16" ry="5" fill="${D}"/><circle cx="14" cy="19" r="4" fill="${L}"/>`,
+slot:`<rect x="3" y="11" width="34" height="18" rx="9" fill="${c}"/><rect x="3" y="11" width="34" height="9" rx="4.5" fill="${L}"/>`,slice:`<polygon points="3,27 24,35 37,22 16,14" fill="${c}" opacity=".75"/><polygon points="3,27 24,35 37,22 16,14" fill="none" stroke="${c}" stroke-width="1.5"/>`,gear:`<circle cx="20" cy="20" r="11" fill="none" stroke="${c}" stroke-width="7" stroke-dasharray="4.3 4.3"/><circle cx="20" cy="20" r="11" fill="${c}"/><circle cx="20" cy="20" r="4" fill="#fff"/>`,screw:`<rect x="14" y="5" width="12" height="30" rx="2" fill="${c}"/><path d="M14 10l12 4M14 16l12 4M14 22l12 4M14 28l12 4" stroke="${D}" stroke-width="2"/>`,hook:`<path d="M12 5V24a8 8 0 0 0 16 0V17" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="butt"/>`};
+return`<svg viewBox="0 0 40 40" width="40" height="40">${S[k]}</svg>`}
+
+function ovl(){if(ov.width!=innerWidth||ov.height!=innerHeight){ov.width=innerWidth;ov.height=innerHeight}ox.clearRect(0,0,ov.width,ov.height);dvUpd();rfOv();
+if(drag&&drag.k=='box'&&drag.mv){const q=[Math.min(drag.x0,drag.x1),Math.min(drag.y0,drag.y1),Math.abs(drag.x1-drag.x0),Math.abs(drag.y1-drag.y0)];
+ox.fillStyle='rgba(26,115,232,.12)';ox.strokeStyle='#1a73e8';ox.lineWidth=1;ox.fillRect(...q);ox.strokeRect(...q)}
+if(drag&&drag.mv&&sel.length&&(drag.k=='m'||drag.k=='z'||(drag.k=='h'&&drag.h.lift)))mvArrows();
+if(msr){ox.fillStyle='#e91e63';ox.font='bold 13px system-ui';ox.fillText(T('Measure: click two points (Esc exits)'),12,innerHeight-40)}
+if(mp.length){const q=mp.map(proj);ox.fillStyle='#e91e63';ox.strokeStyle='#e91e63';ox.lineWidth=2;
+q.forEach(a=>{if(a[2]>0){ox.beginPath();ox.arc(a[0],a[1],5,0,7);ox.fill()}});
+if(mp.length==2&&q[0][2]>0&&q[1][2]>0){ox.beginPath();ox.moveTo(q[0][0],q[0][1]);ox.lineTo(q[1][0],q[1][1]);ox.stroke();
+const dd=[0,1,2].map(i=>mp[1][i]-mp[0][i]),T=Math.hypot(...dd).toFixed(2)+' mm  (dx '+dd[0].toFixed(2)+', dy '+dd[1].toFixed(2)+', dz '+dd[2].toFixed(2)+')',
+tx=(q[0][0]+q[1][0])/2+8,ty=(q[0][1]+q[1][1])/2-8;ox.font='bold 13px system-ui';ox.lineWidth=4;ox.strokeStyle='#fff';ox.strokeText(T,tx,ty);ox.fillText(T,tx,ty)}}
+if(alMode&&alRef){const b=geo(alRef).bb,q=proj([(b[0]+b[3])/2,(b[1]+b[4])/2,b[5]]);if(q[2]>0){ox.fillStyle='#ff9800';ox.beginPath();ox.arc(q[0],q[1]-18,11,0,7);ox.fill();
+ox.fillStyle='#fff';ox.font='bold 10px system-ui';ox.textAlign='center';ox.fillText('REF',q[0],q[1]-14);ox.textAlign='left'}}
+if(sel.length!=1)return;ox.fillStyle='#fff';ox.strokeStyle='#1a73e8';ox.lineWidth=2;
+for(const h of hnd(sel[0])){const q=hpos(h);if(q[2]<=0)continue;
+if(h.lift){ox.fillStyle='#222';ox.beginPath();ox.moveTo(q[0],q[1]-12);ox.lineTo(q[0]-9,q[1]+1);ox.lineTo(q[0]+9,q[1]+1);ox.fill();ox.fillRect(q[0]-3,q[1],6,11)}
+else if(h.rot!==undefined){ox.fillStyle=['#e53935','#43a047','#1e88e5'][h.rot];ox.beginPath();ox.arc(q[0],q[1],8,0,7);ox.fill();ox.strokeStyle='#fff';ox.stroke()}
+else{ox.fillStyle='#fff';ox.strokeStyle='#1a73e8';ox.fillRect(q[0]-5,q[1]-5,10,10);ox.strokeRect(q[0]-5,q[1]-5,10,10)}}}
+
+function prog(v,f){const p=gl.createProgram();for(const[t,s]of[[gl.VERTEX_SHADER,v],[gl.FRAGMENT_SHADER,f]]){const h=gl.createShader(t);gl.shaderSource(h,s);gl.compileShader(h);if(!gl.getShaderParameter(h,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(h);gl.attachShader(p,h)}
+gl.bindAttribLocation(p,0,'aP');gl.bindAttribLocation(p,1,'aN');gl.bindAttribLocation(p,2,'aC');gl.linkProgram(p);return p}
+const A=prog('attribute vec3 aP,aN,aC;uniform mat4 uM;varying vec3 vN,vC;void main(){vN=aN;vC=aC;gl_Position=uM*vec4(aP,1.);}',
+'precision mediump float;varying vec3 vN,vC;uniform vec3 uC;uniform float uF,uA;void main(){if(uF>1.5&&uF<2.5){gl_FragColor=vec4(uC,uA);return;}if(uF>.5&&uF<1.5){gl_FragColor=vec4(1.);return;}if(uF>2.5&&mod(gl_FragCoord.x+gl_FragCoord.y,6.)<3.)discard;vec3 n=normalize(vN);float l=.38+.5*max(dot(n,normalize(vec3(.4,-.6,.8))),0.)+.25*max(dot(n,normalize(vec3(-.7,.4,.3))),0.);gl_FragColor=vec4((uF>2.5?uC:vC)*l,1.);}'),
+B=prog('attribute vec2 aP;varying vec2 vU;void main(){vU=aP*.5+.5;gl_Position=vec4(aP,0.,1.);}',
+'precision mediump float;varying vec2 vU;uniform sampler2D uT;uniform vec2 uS;uniform float uW;void main(){if(texture2D(uT,vU).r>.5)discard;float h=0.;for(int i=0;i<16;i++){float a=float(i)*.3927;h=max(h,texture2D(uT,vU+vec2(cos(a),sin(a))*uW*uS).r);}if(h<.5)discard;gl_FragColor=vec4(.1,.45,1.,1.);}');
+const uM=gl.getUniformLocation(A,'uM'),uC=gl.getUniformLocation(A,'uC'),uF=gl.getUniformLocation(A,'uF'),uA=gl.getUniformLocation(A,'uA'),uS=gl.getUniformLocation(B,'uS'),uW=gl.getUniformLocation(B,'uW');
+const mk=a=>{const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.STATIC_DRAW);return b};
+const bq=mk([-1e3,-1e3,0,1e3,-1e3,0,1e3,1e3,0,-1e3,-1e3,0,1e3,1e3,0,-1e3,1e3,0]),bq2=mk([-1,-1,1,-1,1,1,-1,-1,1,1,-1,1]);
+const gridL=(st,sk)=>{const a=[];for(let i=-1000;i<=1000;i+=st){if(sk&&i%sk==0)continue;a.push(i,-1000,0,i,1000,0,-1000,i,0,1000,i,0)}return a};
+const gm=gridL(1,100),gM=gridL(100,0),bm=mk(gm),bM=mk(gM),NM=gm.length/3,NJ=gM.length/3;
+const tex=gl.createTexture(),fb=gl.createFramebuffer();gl.bindTexture(gl.TEXTURE_2D,tex);
+[[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],[gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]].forEach(([a,b])=>gl.texParameteri(gl.TEXTURE_2D,a,b));
+gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+const bind3=(b,s)=>{gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,s,0);
+if(s>12){gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,s,12);gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,3,gl.FLOAT,false,s,24)}else{gl.disableVertexAttribArray(1);gl.disableVertexAttribArray(2)}};
+const col=(c,f,a)=>{gl.uniform3fv(uC,c);gl.uniform1f(uF,f);gl.uniform1f(uA,a)};
+
+let rerr=0;
+function draw(){
+if(gl.isContextLost()){requestAnimationFrame(draw);return}
+try{camOk();const d=devicePixelRatio||1,W=innerWidth*d|0,H=innerHeight*d|0;
+if(cv.width!=W||cv.height!=H){cv.width=W;cv.height=H;gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null)}
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.clearColor(.72,.77,.81,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+gl.enable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.useProgram(A);gl.uniformMatrix4fv(uM,false,mats(cam(),W/H));
+const pl=()=>{gl.depthMask(false);gl.enable(gl.POLYGON_OFFSET_FILL);gl.polygonOffset(2,2);bind3(bq,12);col([.9,1,.86],2,.6);gl.drawArrays(gl.TRIANGLES,0,6);gl.disable(gl.POLYGON_OFFSET_FILL);
+const ga=Math.max(0,Math.min(1,(200-C.d)/100))*.6;if(ga>0){bind3(bm,12);col([.22,.42,.28],2,ga);gl.drawArrays(gl.LINES,0,NM)}
+bind3(bM,12);col([.2,.4,.26],2,.9);gl.drawArrays(gl.LINES,0,NJ);gl.depthMask(true)};
+for(const o of objects){if(o.hid)continue;const g=geo(o);if(!g.n)continue;bind3(g.b,36);col(o.slice?rgb(o.col):o.hole?[.55,.6,.66]:rgb(o.col),(o.hole||o.slice)?3:0,1);gl.drawArrays(gl.TRIANGLES,0,g.n)}
+pl();rfDraw(mats(cam(),W/H));
+if(sel.length){gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.disable(gl.DEPTH_TEST);
+for(const o of sel){const g=geo(o);if(!g.n)continue;bind3(g.b,36);col([1,1,1],1,1);gl.drawArrays(gl.TRIANGLES,0,g.n)}
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.useProgram(B);gl.bindTexture(gl.TEXTURE_2D,tex);gl.uniform2f(uS,1/W,1/H);gl.uniform1f(uW,3*d);
+gl.disableVertexAttribArray(1);gl.bindBuffer(gl.ARRAY_BUFFER,bq2);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.drawArrays(gl.TRIANGLES,0,6)}
+ovl();drawVC();rerr=0}catch(e){console.error('Render loop error:',e);if(++rerr==30)warn('Rendering problem: if the view stays blank, reload the page (your work is autosaved)',8000)}
+requestAnimationFrame(draw)}
+
+function chkHole(L){const h=L.filter(o=>o.hole),sd=L.filter(o=>!o.hole);if(!h.length||!sd.length)return;const ov=(a,b)=>{const p=geo(a).bb,q=geo(b).bb;return p[0]<q[3]&&p[3]>q[0]&&p[1]<q[4]&&p[4]>q[1]&&p[2]<q[5]&&p[5]>q[2]};for(const x of h)if(!sd.some(y=>ov(x,y)))warn('A hole does not touch any solid: it will have no effect')}
+/* ---------- outliner ---------- */
+const ol=document.createElement('div');ol.className='p';ol.id='ol';document.body.appendChild(ol);const olb=document.createElement('div');olb.id='olb';ol.appendChild(olb);let olK='';
+function outl(){const k=objects.map(o=>(o.hid?1:0)+(sel.includes(o)?'s':'')+(o.kids?o.kids.length:'')+o.type+(o.hole?'h':'')).join(',');if(k===olK)return;olK=k;olb.textContent='';const h=document.createElement('b');h.textContent=T('Outliner')+' ('+objects.length+')';olb.appendChild(h);
+objects.forEach((o,i)=>{const r=document.createElement('div');r.className='or'+(sel.includes(o)?' on':'');if(o.hid)r.style.opacity=.45;const t=document.createElement('span');t.textContent=(o.kids?'\u25a3 ':o.hole?'\u25cc ':'\u25a0 ')+(o.name||T(o.type)+' '+(i+1))+(o.kids?' ('+o.kids.length+')':'');r.appendChild(t);
+const e=document.createElement('span');e.textContent=T(o.hid?'hidden':'hide');e.style.cssText='font-size:11px;color:#667';e.onclick=ev=>{ev.stopPropagation();snap();o.hid=!o.hid;if(o.hid)sel=sel.filter(q=>q!=o);ui()};r.appendChild(e);
+r.onclick=ev=>{sel=ev.shiftKey?(sel.includes(o)?sel.filter(q=>q!=o):[...sel,o]):[o];ui()};olb.appendChild(r);
+if(o.kids)o.kids.forEach(q=>{const c=document.createElement('div');c.className='or';c.style.paddingLeft='18px';c.style.color='#667';c.textContent='\u2514 '+T(q.type||'shape')+(q.hole?' ('+T('hole')+')':'');c.onclick=r.onclick;olb.appendChild(c)})})}
+/* ---------- view gizmo ---------- */
+const vc=document.createElement('canvas');vc.width=vc.height=96;vc.id='vc';vc.className='p';vc.style.cssText='top:128px;right:228px;left:auto;bottom:auto;width:96px;height:96px;padding:0;cursor:pointer';vc.title='Click an axis end to look from that side, centre = isometric';document.body.appendChild(vc);
+const AXS=[[1,0,0,'X','#d33',0,0],[-1,0,0,'','#d33',0,Math.PI],[0,1,0,'Y','#2a2',0,Math.PI/2],[0,-1,0,'','#2a2',0,-Math.PI/2],[0,0,1,'Z','#36d',1.55,-Math.PI/2],[0,0,-1,'','#36d',-1.55,-Math.PI/2]];
+function tips(){const c=cam();return AXS.map(a=>{const v=[a[0],a[1],a[2]];return{a,x:48+dot(v,c.r)*34,y:48-dot(v,c.u)*34,z:dot(v,c.f)}})}
+function drawVC(){const x=vc.getContext('2d');x.clearRect(0,0,96,96);const T=tips().sort((p,q)=>q.z-p.z);x.font='bold 11px system-ui';x.textAlign='center';x.textBaseline='middle';
+for(const t of T){x.globalAlpha=t.z>0.3?.45:1;if(t.a[3]){x.strokeStyle=t.a[4];x.lineWidth=2;x.beginPath();x.moveTo(48,48);x.lineTo(t.x,t.y);x.stroke()}x.fillStyle=t.a[3]?t.a[4]:'#fff';x.strokeStyle=t.a[4];x.lineWidth=1.5;x.beginPath();x.arc(t.x,t.y,8,0,7);x.fill();x.stroke();if(t.a[3]){x.fillStyle='#fff';x.fillText(t.a[3],t.x,t.y+.5)}}x.globalAlpha=1}
+vc.onclick=ev=>{if(vc._moved){vc._moved=false;return}const r=vc.getBoundingClientRect(),px=ev.clientX-r.left,py=ev.clientY-r.top;let b=null;for(const t of tips())if(Math.hypot(t.x-px,t.y-py)<10&&(!b||t.z<b.z))b=t;
+if(b){C.p=b.a[5];C.t=b.a[6];ORT=true}else if(Math.hypot(px-48,py-48)<12){C.p=.6;C.t=-.8;ORT=false}}
+/* ---------- movable windows ---------- */
+const LK='plateLayoutV2';let LAY={};try{LAY=JSON.parse(localStorage.getItem(LK)||'{}')||{}}catch(e){LAY={}}
+const saveLay=()=>{try{localStorage.setItem(LK,JSON.stringify(LAY))}catch(e){}};
+function placeWin(p,x,y){if(!isFinite(x)||!isFinite(y))return;const w=p.offsetWidth||100;x=Math.max(40-w,Math.min(innerWidth-40,x));y=Math.max(0,Math.min(innerHeight-24,y));p.style.left=x+'px';p.style.top=y+'px';p.style.right='auto';p.style.bottom='auto';p.style.transform='none'}
+const SIDES=['left','top','right','bottom','transform'];
+function resetPos(p){SIDES.forEach(k=>p.style[k]=p._d[k]);delete LAY[p.id];saveLay()}
+function remember(p){const r=p.getBoundingClientRect();LAY[p.id]=[r.left,r.top];saveLay()}
+function mkGrip(p){const g=document.createElement('div');g.className='gr';g.title='Drag to move this window (double-click to reset its position)';let d=null;
+g.onpointerdown=e=>{if(e.button)return;const r=p.getBoundingClientRect();d={x:e.clientX,y:e.clientY,l:r.left,t:r.top};try{g.setPointerCapture(e.pointerId)}catch(x){}e.preventDefault()};
+g.onpointermove=e=>{if(d)placeWin(p,d.l+e.clientX-d.x,d.t+e.clientY-d.y)};
+g.onpointerup=g.onpointercancel=()=>{if(d){d=null;remember(p)}};g.ondblclick=()=>resetPos(p);p.appendChild(g);
+new MutationObserver(()=>{if(g.parentNode!==p)p.appendChild(g)}).observe(p,{childList:true})}
+let vd=null;vc.onpointerdown=e=>{if(e.button)return;vd={x:e.clientX,y:e.clientY,m:false,r:vc.getBoundingClientRect()};try{vc.setPointerCapture(e.pointerId)}catch(x){}};
+vc.onpointermove=e=>{if(!vd)return;if(!vd.m&&Math.hypot(e.clientX-vd.x,e.clientY-vd.y)>5)vd.m=true;if(vd.m)placeWin(vc,vd.r.left+e.clientX-vd.x,vd.r.top+e.clientY-vd.y)};
+vc.onpointerup=vc.onpointercancel=()=>{if(vd&&vd.m){vc._moved=true;remember(vc)}vd=null};vc.ondblclick=()=>resetPos(vc);
+const WIN=[...document.querySelectorAll('.p')].filter(p=>p.id);
+WIN.forEach(p=>{p._d={};SIDES.forEach(k=>p._d[k]=p.style[k]);if(p!==vc)mkGrip(p);const a=LAY[p.id];if(Array.isArray(a))placeWin(p,a[0],a[1])});
+addEventListener('resize',()=>WIN.forEach(p=>{const a=LAY[p.id];if(Array.isArray(a))placeWin(p,a[0],a[1])}));
+const lg=document.createElement('button');lg.id='lg';lg.textContent=LANG.toUpperCase();lg.title='Language / Lingua / Idioma';document.body.appendChild(lg);
+lg.onclick=()=>{LANG=LANGS[(LANGS.indexOf(LANG)+1)%LANGS.length];try{localStorage.setItem('plateLang',LANG)}catch(e){}applyLang()};
+outl();if(LANG!='en')applyLang();restoreAS();draw();
+</script>
